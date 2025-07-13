@@ -8,6 +8,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
 from dotenv import load_dotenv
+import base64
+import requests
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -20,6 +22,45 @@ EMAIL_REMETENTE_PASS = os.getenv("GMAIL_APP_PASSWORD")
 EMAIL_ADMIN_FALLBACK = os.getenv("EMAIL_ADMIN", EMAIL_REMETENTE_USER)
 
 # ---------------- Funções de Lembretes ----------------
+def commit_arquivo_json_para_github(repo_owner, repo_name, file_path, commit_message, token):
+    """
+    Atualiza ou cria um arquivo no repositório GitHub via API.
+    """
+    # Lê o conteúdo do arquivo local
+    with open(file_path, 'rb') as f:
+        content = f.read()
+    encoded_content = base64.b64encode(content).decode()
+
+    api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json"
+    }
+
+    # Primeiro, verificar se o arquivo já existe (para pegar o SHA)
+    response = requests.get(api_url, headers=headers)
+    if response.status_code == 200:
+        sha = response.json()["sha"]
+    else:
+        sha = None
+
+    # Payload para criar/atualizar o arquivo
+    data = {
+        "message": commit_message,
+        "content": encoded_content,
+        "branch": "main"
+    }
+    if sha:
+        data["sha"] = sha
+
+    put_response = requests.put(api_url, headers=headers, json=data)
+
+    if put_response.status_code in [200, 201]:
+        st.success("✔️ Arquivo atualizado no GitHub com sucesso!")
+    else:
+        st.error(f"❌ Falha ao atualizar arquivo no GitHub: {put_response.status_code}")
+        st.json(put_response.json())
 
 def carregar_lembretes():
     if not os.path.exists(LEMBRETES_FILE):
@@ -34,6 +75,20 @@ def carregar_lembretes():
 def salvar_lembretes(lembretes):
     with open(LEMBRETES_FILE, 'w', encoding='utf-8') as f:
         json.dump(lembretes, f, indent=4, ensure_ascii=False)
+    
+    # 🔁 Commit automático no GitHub após salvar
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        commit_arquivo_json_para_github(
+            repo_owner="Israel-ETE78",
+            repo_name="lembrete",
+            file_path=LEMBRETES_FILE,
+            commit_message="🔄 Atualização automática dos lembretes",
+            token=token
+        )
+    else:
+        st.warning("⚠️ GITHUB_TOKEN não encontrado. Commit automático não realizado.")
+
 
 def adicionar_lembrete(titulo, descricao, data, hora):
     lembretes = carregar_lembretes()

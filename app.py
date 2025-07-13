@@ -1,7 +1,7 @@
 import streamlit as st
 import json
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import uuid
 import smtplib
 from email.mime.text import MIMEText
@@ -10,7 +10,7 @@ import os
 from dotenv import load_dotenv
 import base64
 import requests
-import pytz
+
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -219,8 +219,7 @@ with tab1:
         with col1:
             data = st.date_input("Data", value=datetime.now().date())
         with col2:
-            hora_brasil = (datetime.utcnow() - timedelta(hours=3)).time() 
-            hora = st.time_input("Hora", value=hora_brasil)
+            hora = st.time_input("Hora", value=datetime.now().time())
         if st.form_submit_button("Adicionar"):
             if titulo:
                 adicionar_lembrete(titulo, descricao, str(data), hora.strftime("%H:%M"))

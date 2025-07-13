@@ -1,0 +1,16 @@
+# .gitignore
+
+# Arquivos de ambiente com segredos
+.env
+
+# Diretórios de cache do Python
+__pycache__/
+.pytest_cache/
+
+# Arquivos de ambiente virtual
+.venv/
+venv/
+env/
+
+# Arquivos de log (se você gerar)
+*.log

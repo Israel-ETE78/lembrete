@@ -10,10 +10,13 @@ import os
 from dotenv import load_dotenv
 import base64
 import requests
-
+import pytz # <<< ADICIONADO: Biblioteca para lidar com fusos horários
 
 # Carrega variáveis do .env
 load_dotenv()
+
+# --- Definição do Fuso Horário ---
+FUSO_HORARIO_BRASIL = pytz.timezone('America/Sao_Paulo') # <<< ADICIONADO
 
 LEMBRETES_FILE = 'lembretes.json'
 CONFIG_FILE = 'config.json'
@@ -181,32 +184,55 @@ def verificar_e_enviar_lembretes_local():
         st.sidebar.warning("Configure o e-mail de destino.")
         return
 
-    agora = datetime.now()
-    atualizados = []
+    # <<< ALTERADO: Pega a hora atual COM o fuso horário correto
+    agora = datetime.now(FUSO_HORARIO_BRASIL)
+    
+    mudanca_ocorreu = False
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Status dos Lembretes")
 
     for lembrete in lembretes:
         try:
-            dh = datetime.strptime(f"{lembrete['data']} {lembrete['hora']}", "%Y-%m-%d %H:%M")
-            if dh <= agora and not lembrete['enviado']:
-                st.sidebar.info(f"Lembrete: '{lembrete['titulo']}' está no horário (envia).")
-            elif dh > agora:
-                st.sidebar.write(f"Agendado: {lembrete['titulo']} - {lembrete['data']} {lembrete['hora']}")
-            else:
-                st.sidebar.write(f"Enviado: {lembrete['titulo']}")
-        except Exception as e:
-            st.sidebar.error(f"Erro: {e}")
-        atualizados.append(lembrete)
+            # Combina data e hora do lembrete em um objeto datetime
+            datetime_lembrete_sem_fuso = datetime.strptime(f"{lembrete['data']} {lembrete['hora']}", "%Y-%m-%d %H:%M")
+            # <<< ALTERADO: Associa o fuso horário ao lembrete para uma comparação justa
+            datetime_lembrete_com_fuso = FUSO_HORARIO_BRASIL.localize(datetime_lembrete_sem_fuso)
 
-    salvar_lembretes(atualizados)
+            if datetime_lembrete_com_fuso <= agora and not lembrete['enviado']:
+                st.sidebar.info(f"Enviando lembrete: '{lembrete['titulo']}'")
+                
+                # Prepara e envia o e-mail
+                assunto = f"⏰ Lembrete: {lembrete['titulo']}"
+                corpo = f"Olá!\n\nEste é um lembrete para:\n\nTítulo: {lembrete['titulo']}\nDescrição: {lembrete['descricao']}\nData: {lembrete['data']} às {lembrete['hora']}"
+                
+                if enviar_email(destino, assunto, corpo):
+                    lembrete['enviado'] = True
+                    mudanca_ocorreu = True
+                    st.sidebar.success(f"E-mail para '{lembrete['titulo']}' enviado!")
+                else:
+                    st.sidebar.error(f"Falha ao enviar e-mail para '{lembrete['titulo']}'.")
+            
+            elif datetime_lembrete_com_fuso > agora:
+                st.sidebar.write(f"Agendado: {lembrete['titulo']} - {lembrete['data']} {lembrete['hora']}")
+            else: # Já foi enviado
+                st.sidebar.write(f"Já enviado: {lembrete['titulo']}")
+
+        except Exception as e:
+            st.sidebar.error(f"Erro ao processar lembrete '{lembrete.get('titulo', 'Desconhecido')}': {e}")
+    
+    # Salva o arquivo de lembretes apenas se um e-mail foi enviado
+    if mudanca_ocorreu:
+        salvar_lembretes(lembretes)
+
 
 # ---------------- Interface ----------------
 
 st.set_page_config(layout="wide", page_title="Jarvis Lembretes")
 st.title("⏰ Jarvis - Sistema de Lembretes Inteligente")
 
+# <<< ALTERADO: Define a hora atual com fuso para os valores padrão dos campos
+hora_atual_brasil = datetime.now(FUSO_HORARIO_BRASIL)
 
 tab1, tab2, tab3 = st.tabs(["Criar Lembrete", "Meus Lembretes", "Configurações de E-mail"])
 
@@ -217,9 +243,11 @@ with tab1:
         descricao = st.text_area("Descrição")
         col1, col2 = st.columns(2)
         with col1:
-            data = st.date_input("Data", value=datetime.now().date())
+            # <<< ALTERADO: Usa a data correta como padrão
+            data = st.date_input("Data", value=hora_atual_brasil.date())
         with col2:
-            hora = st.time_input("Hora", value=datetime.now().time())
+            # <<< ALTERADO: Usa a hora correta como padrão
+            hora = st.time_input("Hora", value=hora_atual_brasil.time())
         if st.form_submit_button("Adicionar"):
             if titulo:
                 adicionar_lembrete(titulo, descricao, str(data), hora.strftime("%H:%M"))
@@ -233,11 +261,17 @@ with tab2:
     if not lembretes:
         st.info("Nenhum lembrete.")
     else:
-        df = pd.DataFrame(lembretes)
-        df["Data e Hora"] = pd.to_datetime(df["data"] + " " + df["hora"], errors="coerce")
-        df = df.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
-        df["Enviado"] = df["enviado"].apply(lambda x: "✅" if x else "❌")
-        st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado"]], hide_index=True)
+        # Tenta converter para DataFrame, tratando possíveis erros
+        try:
+            df = pd.DataFrame(lembretes)
+            df["Data e Hora"] = pd.to_datetime(df["data"] + " " + df["hora"], errors='coerce')
+            df = df.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
+            df["Enviado"] = df["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+            df["Data e Hora"] = df["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+            st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado"]], use_container_width=True, hide_index=True)
+        except Exception as e:
+            st.error(f"Não foi possível exibir os lembretes. Verifique o arquivo JSON. Erro: {e}")
+
 
         st.subheader("Editar ou Excluir")
         opcoes = {l["id"]: f"{l['titulo']} - {l['data']} {l['hora']}" for l in lembretes}
@@ -248,13 +282,20 @@ with tab2:
             with st.form("editar_form"):
                 novo_titulo = st.text_input("Título", value=item["titulo"])
                 nova_desc = st.text_area("Descrição", value=item["descricao"])
-                nova_data = st.date_input("Data", value=datetime.strptime(item["data"], "%Y-%m-%d"))
-                nova_hora = st.time_input("Hora", value=datetime.strptime(item["hora"], "%H:%M").time())
+                data_atual = datetime.strptime(item["data"], "%Y-%m-%d")
+                hora_atual = datetime.strptime(item["hora"], "%H:%M").time()
+
+                col_data, col_hora = st.columns(2)
+                with col_data:
+                    nova_data = st.date_input("Data", value=data_atual)
+                with col_hora:
+                    nova_hora = st.time_input("Hora", value=hora_atual)
+                
                 col1, col2 = st.columns(2)
-                if col1.form_submit_button("Salvar"):
+                if col1.form_submit_button("Salvar Alterações"):
                     editar_lembrete(item["id"], novo_titulo, nova_desc, str(nova_data), nova_hora.strftime("%H:%M"))
                     st.rerun()
-                if col2.form_submit_button("Excluir"):
+                if col2.form_submit_button("Excluir Lembrete", type="primary"):
                     excluir_lembrete(item["id"])
                     st.rerun()
 
@@ -264,7 +305,7 @@ with tab3:
     destino = config.get("email_destino", "")
     with st.form("email_form"):
         novo = st.text_input("E-mail para receber lembretes", value=destino)
-        if st.form_submit_button("Salvar"):
+        if st.form_submit_button("Salvar E-mail"):
             if "@" in novo and "." in novo:
                 config["email_destino"] = novo
                 salvar_configuracoes(config)
@@ -275,4 +316,3 @@ with tab3:
 
 # Verificação de lembretes SEMPRE na renderização
 verificar_e_enviar_lembretes_local()
-

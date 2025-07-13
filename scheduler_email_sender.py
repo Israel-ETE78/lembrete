@@ -1,3 +1,5 @@
+# scheduler_email_sender.py (versão com DEBUG PRINTS)
+
 import json
 import os
 from datetime import datetime
@@ -14,6 +16,28 @@ CONFIG_FILE = 'config.json'
 EMAIL_REMETENTE_USER = os.getenv("GMAIL_USER")
 EMAIL_REMETENTE_PASS = os.getenv("GMAIL_APP_PASSWORD")
 EMAIL_ADMIN_FALLBACK = os.getenv("EMAIL_ADMIN", EMAIL_REMETENTE_USER)
+
+# --- DEBUG PRINTS (REMOVER DEPOIS DE RESOLVER O PROBLEMA) ---
+print("--- DEBUG INFORMATION ---")
+print(f"DEBUG: Valor de GMAIL_USER: '{EMAIL_REMETENTE_USER}' (Configurado? {bool(EMAIL_REMETENTE_USER)})")
+print(f"DEBUG: Valor de GMAIL_APP_PASSWORD: '{EMAIL_REMETENTE_PASS[:5]}...' (Configurado? {bool(EMAIL_REMETENTE_PASS)})") # Oculta a maioria da senha por segurança
+print(f"DEBUG: Valor de EMAIL_ADMIN_FALLBACK: '{EMAIL_ADMIN_FALLBACK}' (Configurado? {bool(EMAIL_ADMIN_FALLBACK)})")
+
+# Tentativa de carregar config.json para debug adicional
+try:
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        debug_config_data = json.load(f)
+        debug_email_destino_from_file = debug_config_data.get("email_destino")
+        print(f"DEBUG: email_destino no config.json: '{debug_email_destino_from_file}' (Configurado? {bool(debug_email_destino_from_file)})")
+except FileNotFoundError:
+    print(f"DEBUG: Arquivo {CONFIG_FILE} não encontrado.")
+except json.JSONDecodeError:
+    print(f"DEBUG: Arquivo {CONFIG_FILE} corrompido ou vazio.")
+except Exception as e:
+    print(f"DEBUG: Erro ao ler {CONFIG_FILE} para debug: {e}")
+print("-------------------------")
+# --- FIM DEBUG PRINTS ---
+
 
 # --- Funções de Carregamento/Salvamento ---
 def carregar_lembretes():
@@ -34,11 +58,16 @@ def salvar_lembretes(lembretes):
 
 def carregar_configuracoes():
     if not os.path.exists(CONFIG_FILE):
-        return {"email_destino": EMAIL_ADMIN_FALLBACK}
+        # Se o arquivo não existe no ambiente do Actions, cria com fallback
+        print(f"Aviso: O arquivo '{CONFIG_FILE}' não existe. Criando com email_destino padrão.")
+        config = {"email_destino": EMAIL_ADMIN_FALLBACK}
+        # Não precisa salvar aqui, pois o Actions é efêmero
+        return config
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
             if "email_destino" not in config:
+                print(f"Aviso: 'email_destino' não encontrado em '{CONFIG_FILE}'. Usando fallback.")
                 config["email_destino"] = EMAIL_ADMIN_FALLBACK
             return config
     except json.JSONDecodeError:
@@ -77,8 +106,12 @@ def main():
     config = carregar_configuracoes()
     email_destino_lembretes = config.get("email_destino", EMAIL_ADMIN_FALLBACK)
     
+    # A condição que causa o aviso
     if not email_destino_lembretes or not (EMAIL_REMETENTE_USER and EMAIL_REMETENTE_PASS):
         print("Aviso: E-mail de destino ou credenciais do remetente não configurados. Não será possível enviar e-mails.")
+        print(f"Status Final: email_destino_lembretes = '{email_destino_lembretes}'")
+        print(f"Status Final: EMAIL_REMETENTE_USER = '{bool(EMAIL_REMETENTE_USER)}'")
+        print(f"Status Final: EMAIL_REMETENTE_PASS = '{bool(EMAIL_REMETENTE_PASS)}'")
         return
 
     agora = datetime.now()
@@ -120,7 +153,7 @@ def main():
             
         lembretes_atualizados.append(lembrete)
 
-    salvar_lembretes(lembretes_atualizados) # Salva o status 'enviado' no JSON no repositório do Actions
+    salvar_lembretes(lembretes_atualizados)
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Verificação concluída. {lembretes_enviados_nesta_execucao} lembrete(s) enviado(s) nesta execução.")
 
 if __name__ == '__main__':

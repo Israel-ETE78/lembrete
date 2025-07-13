@@ -217,7 +217,6 @@ with tab3:
             else:
                 st.error("E-mail inválido.")
 
-if 'lembretes_verificados_inicialmente' not in st.session_state:
-    st.session_state.lembretes_verificados_inicialmente = True
-    st.toast("Verificando lembretes...")
-    verificar_e_enviar_lembretes_local()
+# Verificação de lembretes SEMPRE na renderização
+verificar_e_enviar_lembretes_local()
+

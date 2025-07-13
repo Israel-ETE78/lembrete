@@ -1,0 +1,74 @@
+# .github/workflows/send_reminders.yml
+
+name: Enviar Lembretes Automáticos
+
+on:
+  schedule:
+    # Roda a cada 30 minutos (nos minutos 00 e 30 de cada hora)
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    # Permite rodar o workflow manualmente na aba 'Actions' do GitHub
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest # O ambiente onde o job vai rodar (um servidor Linux temporário)
+
+    steps:
+    - name: Checkout do código
+      uses: actions/checkout@v4 # Clona seu repositório para o ambiente do Actions
+
+    - name: Configurar Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Use a versão do Python que você preferir (ex: '3.10', '3.11')
+
+    - name: Instalar dependências
+      run: |
+        # As dependências que o scheduler_email_sender.py precisa
+        # Certifique-se de que seu requirements.txt contenha 'pandas', 'python-dotenv' etc.
+        pip install -r requirements.txt
+        # Adicione quaisquer outras libs que o script de envio precise, se houver
+        # Por exemplo: pip install some-other-lib
+
+    - name: Criar arquivos JSON (se ausentes ou vazios)
+      # Garante que os arquivos lembretes.json e config.json existam
+      # e tenham um conteúdo JSON válido para evitar erros de leitura.
+      run: |
+        if [ ! -f lembretes.json ] || [ ! -s lembretes.json ]; then
+          echo '[]' > lembretes.json
+          echo "Criado lembretes.json com conteúdo inicial []"
+        else
+          echo "lembretes.json já existe e não está vazio."
+        fi
+        
+        if [ ! -f config.json ] || [ ! -s config.json ]; then
+          echo '{"email_destino": ""}' > config.json
+          echo "Criado config.json com conteúdo inicial {}"
+        else
+          echo "config.json já existe e não está vazio."
+        fi
+
+    - name: Executar script de envio de lembretes
+      env:
+        # Passa as Secrets do GitHub para o ambiente do script Python
+        GMAIL_USER: ${{ secrets.GMAIL_USER }}
+        GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }} # Usado como fallback se email_destino não estiver no config.json
+      run: |
+        # Executa o script Python que verifica e envia os e-mails
+        python scheduler_email_sender.py
+
+    - name: Commit e push das mudanças em lembretes.json (marcar como enviado)
+      # ESTE PASSO É CRÍTICO para que o status 'enviado: True' persista no seu repositório.
+      # Ele fará um novo commit e push cada vez que o scheduler_email_sender.py
+      # modificar o lembretes.json (ou seja, quando um lembrete for enviado).
+      run: |
+        git config user.name "GitHub Actions Bot"
+        git config user.email "actions@github.com"
+        git add lembretes.json # Adiciona o arquivo modificado ao stage
+        git commit -m "Atualizar status de lembretes após envio automático" || echo "Nenhuma mudança para commitar."
+        git push || echo "Não foi possível dar push. Verifique se há novas execuções concorrentes ou regras de proteção de branch."
+      env:
+        # GITHUB_TOKEN é um token de acesso temporário fornecido pelo GitHub Actions
+        # que tem permissões para interagir com o repositório.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

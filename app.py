@@ -7,19 +7,20 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import os
-from dotenv import load_dotenv # Importa a função para carregar variáveis de ambiente
+from dotenv import load_dotenv
 
-# Carrega as variáveis de ambiente do arquivo .env
+# Carrega as variáveis de ambiente do arquivo .env (para execução LOCAL)
 load_dotenv()
 
 # --- Configurações para Armazenamento e E-mail ---
 LEMBRETES_FILE = 'lembretes.json'
-CONFIG_FILE = 'config.json' # Novo arquivo de configuração
+CONFIG_FILE = 'config.json'
 
-# Credenciais de e-mail carregadas do .env (remetente)
+# Credenciais de e-mail carregadas do .env (remetente para execução LOCAL)
 EMAIL_REMETENTE_USER = os.getenv("GMAIL_USER")
 EMAIL_REMETENTE_PASS = os.getenv("GMAIL_APP_PASSWORD")
-EMAIL_ADMIN_FALLBACK = os.getenv("EMAIL_ADMIN", EMAIL_REMETENTE_USER) # E-mail admin do .env como fallback inicial
+# Fallback para o email de destino, se não configurado no config.json
+EMAIL_ADMIN_FALLBACK = os.getenv("EMAIL_ADMIN", EMAIL_REMETENTE_USER)
 
 # --- Funções para Gerenciar Lembretes ---
 
@@ -32,7 +33,6 @@ def carregar_lembretes():
         with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     except json.JSONDecodeError:
-        # Se o arquivo estiver vazio ou corrompido, retorna uma lista vazia
         return []
 
 def salvar_lembretes(lembretes):
@@ -44,12 +44,12 @@ def adicionar_lembrete(titulo, descricao, data, hora):
     """Adiciona um novo lembrete à lista."""
     lembretes = carregar_lembretes()
     novo_lembrete = {
-        "id": str(uuid.uuid4()), # Gera um ID único
+        "id": str(uuid.uuid4()),
         "titulo": titulo,
         "descricao": descricao,
         "data": data,
         "hora": hora,
-        "enviado": False # Marca como não enviado inicialmente
+        "enviado": False
     }
     lembretes.append(novo_lembrete)
     salvar_lembretes(lembretes)
@@ -64,7 +64,7 @@ def editar_lembrete(lembrete_id, novo_titulo, nova_descricao, nova_data, nova_ho
             lembrete['descricao'] = nova_descricao
             lembrete['data'] = nova_data
             lembrete['hora'] = nova_hora
-            lembrete['enviado'] = False # Reinicia o status de envio após edição
+            lembrete['enviado'] = False
             break
     salvar_lembretes(lembretes)
     st.success("Lembrete editado com sucesso!")
@@ -81,7 +81,6 @@ def excluir_lembrete(lembrete_id):
 def carregar_configuracoes():
     """Carrega as configurações do arquivo JSON."""
     if not os.path.exists(CONFIG_FILE):
-        # Se o arquivo não existe, cria com valores padrão
         config = {"email_destino": EMAIL_ADMIN_FALLBACK}
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
@@ -89,13 +88,11 @@ def carregar_configuracoes():
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
-            # Garante que a chave 'email_destino' existe
             if "email_destino" not in config:
                 config["email_destino"] = EMAIL_ADMIN_FALLBACK
-                salvar_configuracoes(config)
+                salvar_configuracoes(config) # Salva para persistir o fallback se ausente
             return config
     except json.JSONDecodeError:
-        # Se o arquivo estiver vazio ou corrompido, retorna config padrão
         config = {"email_destino": EMAIL_ADMIN_FALLBACK}
         salvar_configuracoes(config)
         return config
@@ -105,7 +102,7 @@ def salvar_configuracoes(config):
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
-# --- Funções para Envio de E-mail ---
+# --- Funções para Envio de E-mail (para teste LOCAL) ---
 
 def enviar_email(destinatario, assunto, corpo):
     """Tenta enviar um e-mail para o destinatário."""
@@ -117,12 +114,11 @@ def enviar_email(destinatario, assunto, corpo):
     msg['From'] = EMAIL_REMETENTE_USER
     msg['To'] = destinatario
     msg['Subject'] = assunto
-    msg.attach(MIMEText(corpo, 'plain', 'utf-8')) # Garante codificação UTF-8
+    msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
 
     try:
-        # Configuração padrão para Gmail
         server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls() # Inicia a segurança TLS
+        server.starttls()
         server.login(EMAIL_REMETENTE_USER, EMAIL_REMETENTE_PASS)
         text = msg.as_string()
         server.sendmail(EMAIL_REMETENTE_USER, destinatario, text)
@@ -133,11 +129,12 @@ def enviar_email(destinatario, assunto, corpo):
         st.warning("Verifique suas credenciais (usuário e senha de aplicativo do Gmail), configurações de SMTP e acesso à internet.")
         return False
 
-def verificar_e_enviar_lembretes():
-    """Verifica lembretes pendentes e envia e-mails se a data/hora for atingida."""
+# --- Lógica de Verificação de Lembretes (para execução LOCAL e feedback visual) ---
+def verificar_e_enviar_lembretes_local():
+    """Verifica lembretes pendentes e simula envio de e-mails para feedback visual."""
     lembretes = carregar_lembretes()
     config = carregar_configuracoes()
-    email_destino_lembretes = config.get("email_destino", EMAIL_ADMIN_FALLBACK) # Pega o e-mail de destino salvo ou o fallback
+    email_destino_lembretes = config.get("email_destino", EMAIL_ADMIN_FALLBACK)
     
     if not email_destino_lembretes:
         st.sidebar.warning("Nenhum e-mail de destino configurado para os lembretes. Por favor, configure na aba 'Configurações de E-mail'.")
@@ -146,31 +143,32 @@ def verificar_e_enviar_lembretes():
     agora = datetime.now()
     lembretes_atualizados = []
     
-    st.sidebar.markdown("---") # Linha divisória para visualização
+    st.sidebar.markdown("---")
     st.sidebar.subheader("Status de Lembretes")
 
     lembretes_enviados_sessao = 0
 
     for lembrete in lembretes:
         try:
-            # Converte a data e hora do lembrete para um objeto datetime
             data_hora_lembrete = datetime.strptime(f"{lembrete['data']} {lembrete['hora']}", "%Y-%m-%d %H:%M")
-
-            # Verifica se o lembrete já passou ou é agora E ainda não foi enviado
             if data_hora_lembrete <= agora and not lembrete['enviado']:
-                assunto = f"Lembrete: {lembrete['titulo']}"
-                corpo = f"Olá!\n\nVocê tem um lembrete pendente:\n\n**Título:** {lembrete['titulo']}\n**Descrição:** {lembrete['descricao']}\n**Data:** {lembrete['data']}\n**Hora:** {lembrete['hora']}\n\nNão se esqueça!"
-                
-                st.sidebar.info(f"Enviando lembrete: **{lembrete['titulo']}**")
-                if enviar_email(email_destino_lembretes, assunto, corpo):
-                    lembrete['enviado'] = True # Marca como enviado após sucesso
-                    st.sidebar.success(f"Lembrete '{lembrete['titulo']}' enviado por e-mail para {email_destino_lembretes}!")
-                    lembretes_enviados_sessao += 1
-                else:
-                    st.sidebar.error(f"Falha ao enviar lembrete: '{lembrete['titulo']}'.")
+                # No ambiente local do Streamlit, apenas informamos que "enviaria"
+                # O envio real será feito pelo GitHub Actions.
+                st.sidebar.info(f"Lembrete **'{lembrete['titulo']}'** está atrasado/no horário. GitHub Actions irá enviar.")
+                # Não mudamos o status 'enviado' aqui, pois a Source of Truth é o Actions
+                # A menos que você queira que a interface local também "envie" e marque.
+                # Se desejar que a interface local TAMBÉM envie (duplicando emails):
+                # assunto = f"Lembrete: {lembrete['titulo']}"
+                # corpo = f"Olá!\n\nVocê tem um lembrete pendente:\n\n**Título:** {lembrete['titulo']}\n**Descrição:** {lembrete['descricao']}\n**Data:** {lembrete['data']}\n**Hora:** {lembrete['hora']}\n\nNão se esqueça!"
+                # if enviar_email(email_destino_lembretes, assunto, corpo):
+                #     lembrete['enviado'] = True # Marcaria como enviado também localmente
+                #     st.sidebar.success(f"Lembrete '{lembrete['titulo']}' enviado (LOCAL) para {email_destino_lembretes}!")
+                #     lembretes_enviados_sessao += 1
+                # else:
+                #     st.sidebar.error(f"Falha ao enviar lembrete (LOCAL): '{lembrete['titulo']}'.")
             elif data_hora_lembrete > agora:
                 st.sidebar.write(f"Próximo: {lembrete['titulo']} em {lembrete['data']} às {lembrete['hora']}")
-            else: # Já foi enviado
+            else: # Já foi enviado (assumindo que o Actions já marcou)
                 st.sidebar.write(f"Enviado: {lembrete['titulo']}")
         except ValueError as e:
             st.sidebar.warning(f"Erro no formato de data/hora do lembrete '{lembrete.get('titulo', 'N/A')}': {e}. Lembrete ignorado.")
@@ -179,11 +177,17 @@ def verificar_e_enviar_lembretes():
             
         lembretes_atualizados.append(lembrete)
 
-    salvar_lembretes(lembretes_atualizados)
+    # Se a interface Streamlit não for a responsável por MUDAR o status 'enviado',
+    # então o salvar_lembretes aqui serve apenas para atualizar a exibição
+    # caso algum outro campo tenha sido editado sem mudança de status de envio.
+    # Se o GitHub Actions é o único que atualiza o status de envio, não precisamos salvar aqui.
+    # Mas para manter a consistência se edições gerais de lembrete mudarem o status para False, mantemos.
+    salvar_lembretes(lembretes_atualizados) 
+    
     if lembretes_enviados_sessao > 0:
-        st.toast(f"{lembretes_enviados_sessao} lembrete(s) enviado(s)!")
+        st.toast(f"{lembretes_enviados_sessao} lembrete(s) processado(s) localmente para envio.")
     else:
-        st.sidebar.info("Nenhum lembrete para enviar agora.")
+        st.sidebar.info("Nenhum lembrete para processar agora.")
 
 
 # --- Interface Streamlit ---
@@ -192,28 +196,24 @@ st.set_page_config(layout="wide", page_title="Sistema de Lembretes ⏰")
 
 st.title("⏰ Sistema de Lembretes Minimalista")
 
-# Abas para organizar a interface
 tab1, tab2, tab3 = st.tabs(["Criar Lembrete", "Meus Lembretes", "Configurações de E-mail"])
 
 with tab1:
     st.header("Criar Novo Lembrete")
-    with st.form("form_criar_lembrete", clear_on_submit=True): # clear_on_submit limpa o formulário após adicionar
+    with st.form("form_criar_lembrete", clear_on_submit=True):
         titulo = st.text_input("Título do Lembrete", help="Um título conciso para o seu lembrete.", max_chars=100)
         descricao = st.text_area("Descrição (Opcional)", help="Detalhes sobre o lembrete.")
         col1, col2 = st.columns(2)
         with col1:
-            # Define o valor padrão para a data como o dia atual
             data = st.date_input("Data", value=datetime.now().date(), min_value=datetime.now().date())
         with col2:
-            # Define o valor padrão para a hora como a hora atual
             hora = st.time_input("Hora", value=datetime.now().time())
         
         submitted = st.form_submit_button("Adicionar Lembrete")
         if submitted:
             if titulo:
-                # Converte data e hora para string no formato esperado pelo JSON
                 adicionar_lembrete(titulo, descricao, str(data), str(hora.strftime("%H:%M")))
-                st.rerun() # Recarrega a página para atualizar a lista de lembretes
+                st.rerun()
             else:
                 st.error("O título do lembrete é obrigatório!")
 
@@ -224,22 +224,12 @@ with tab2:
     if not lembretes:
         st.info("Nenhum lembrete cadastrado ainda. Crie um na aba 'Criar Lembrete'!")
     else:
-        # Converter para DataFrame para melhor exibição e manipulação
         df_lembretes = pd.DataFrame(lembretes)
-        
-        # Cria uma coluna combinada para Data e Hora e converte para datetime
         df_lembretes['Data e Hora'] = pd.to_datetime(df_lembretes['data'] + ' ' + df_lembretes['hora'], errors='coerce')
-        
-        # Filtra lembretes com Data e Hora inválidas (se houver)
         df_lembretes = df_lembretes.dropna(subset=['Data e Hora'])
-
-        # Classifica os lembretes por Data e Hora
         df_lembretes = df_lembretes.sort_values(by='Data e Hora', ascending=True)
-        
-        # Formata a coluna 'enviado' para uma exibição mais amigável
         df_lembretes['Enviado'] = df_lembretes['enviado'].apply(lambda x: "✅ Sim" if x else "❌ Não")
 
-        # Exibe apenas as colunas relevantes para o usuário
         df_display = df_lembretes[['titulo', 'descricao', 'Data e Hora', 'Enviado']].rename(
             columns={'titulo': 'Título', 'descricao': 'Descrição'}
         )
@@ -248,10 +238,8 @@ with tab2:
 
         st.subheader("Editar/Excluir Lembrete")
         
-        # Garante que 'lembretes' está atualizado para o selectbox
         lembretes_disponiveis = carregar_lembretes()
         if lembretes_disponiveis:
-            # Crie um dicionário para mapear ID para Título para seleção
             lembretes_dict = {lembrete['id']: f"{lembrete['titulo']} ({lembrete['data']} {lembrete['hora']})" for lembrete in lembretes_disponiveis}
             
             selected_lembrete_id = st.selectbox(
@@ -272,11 +260,9 @@ with tab2:
                         
                         col_edit1, col_edit2 = st.columns(2)
                         with col_edit1:
-                            # Converte a string de data para objeto date para st.date_input
                             default_date = datetime.strptime(lembrete_selecionado['data'], "%Y-%m-%d").date()
                             nova_data = st.date_input("Nova Data", value=default_date, min_value=datetime.now().date())
                         with col_edit2:
-                            # Converte a string de hora para objeto time para st.time_input
                             default_time = datetime.strptime(lembrete_selecionado['hora'], "%H:%M").time()
                             nova_hora = st.time_input("Nova Hora", value=default_time)
 
@@ -285,16 +271,15 @@ with tab2:
                             submit_edit = st.form_submit_button("Salvar Edição")
                             if submit_edit:
                                 if novo_titulo:
-                                    # Converte data e hora para string no formato esperado
                                     editar_lembrete(selected_lembrete_id, novo_titulo, nova_descricao, str(nova_data), str(nova_hora.strftime("%H:%M")))
-                                    st.rerun() # Atualiza a página para mostrar as mudanças
+                                    st.rerun()
                                 else:
                                     st.error("O título do lembrete não pode ser vazio!")
                         with col_btns[1]:
                             submit_delete = st.form_submit_button("Excluir Lembrete")
                             if submit_delete:
                                 excluir_lembrete(selected_lembrete_id)
-                                st.rerun() # Atualiza a página para mostrar as mudanças
+                                st.rerun()
         else:
             st.info("Nenhum lembrete disponível para edição ou exclusão.")
 
@@ -316,11 +301,11 @@ with tab3:
         )
         salvar_config_btn = st.form_submit_button("Salvar E-mail de Destino")
         if salvar_config_btn:
-            if "@" in novo_email_destino and "." in novo_email_destino: # Validação simples de e-mail
+            if "@" in novo_email_destino and "." in novo_email_destino:
                 config_atual["email_destino"] = novo_email_destino
                 salvar_configuracoes(config_atual)
                 st.success(f"E-mail de destino salvo: {novo_email_destino}")
-                st.rerun() # Recarrega para refletir a mudança
+                st.rerun()
             else:
                 st.error("Por favor, insira um endereço de e-mail válido.")
 
@@ -341,10 +326,8 @@ with tab3:
         else:
             st.error("As credenciais do remetente (usuário e senha de aplicativo) não estão configuradas corretamente. Verifique seu arquivo `.env`.")
 
-# --- Executa a verificação de lembretes ao carregar a página ---
-# O Streamlit roda o script inteiro a cada interação.
-# Usamos st.session_state para controlar se a verificação inicial já foi feita.
+# --- Executa a verificação de lembretes ao carregar a página (feedback visual LOCAL) ---
 if 'lembretes_verificados_inicialmente' not in st.session_state:
     st.session_state.lembretes_verificados_inicialmente = True
     st.toast("Verificando lembretes pendentes...")
-    verificar_e_enviar_lembretes()
+    verificar_e_enviar_lembretes_local() # Usa a função local para feedback

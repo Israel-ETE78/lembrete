@@ -1,14 +1,5 @@
 [
     {
-        "id": "5eaf68a6-2740-4df2-a996-faf8d119aa36",
-        "titulo": "Descanso",
-        "descricao": "hora de dormi Israel boa noite.",
-        "data": "2025-07-14",
-        "hora": "00:30",
-        "enviado": true,
-        "user_id": "f348d38c-d527-4a84-ad64-c1b820c0ac8c"
-    },
-    {
         "id": "7a058e29-ff2f-445d-b5ad-49732ced28f9",
         "titulo": "meditação",
         "descricao": "hora da oração",

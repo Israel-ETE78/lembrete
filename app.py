@@ -356,7 +356,7 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("Nome de usuário ou senha inválidos.")
-    st.info("Usuário padrão: admin / admin123. Altere após o primeiro login.")
+    
 
 else:
     st.sidebar.markdown(f"**Usuário:** {st.session_state.username}")

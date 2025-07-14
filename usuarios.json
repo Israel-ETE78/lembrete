@@ -1,0 +1,14 @@
+[
+    {
+        "id": "f348d38c-d527-4a84-ad64-c1b820c0ac8c",
+        "username": "israel",
+        "password_hash": "$2b$12$zNe3/q2PKnznvhiz/0roMeJTyeJZ6bIGysC13ylY6KV5dC/7V6XSi",
+        "role": "admin"
+    },
+    {
+        "id": "1576a83f-cfa7-438c-b6d1-781bbbb1310b",
+        "username": "leidy",
+        "password_hash": "$2b$12$xAFtktzBUmpcIK8F435JUeqP0yLrD82Z6OCckU.nQ1P2ZwGiyBrNW",
+        "role": "normal"
+    }
+]

@@ -2,6 +2,5 @@ streamlit
 pandas
 python-dotenv
 pytz
-json
 requests
 bcrypt

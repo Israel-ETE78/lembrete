@@ -20,47 +20,53 @@ load_dotenv()
 FUSO_HORARIO_BRASIL = pytz.timezone('America/Sao_Paulo')
 
 LEMBRETES_FILE = 'lembretes.json'
-CONFIG_FILE = 'config.json' # This file will now store per-user email configurations
+CONFIG_FILE = 'config.json'
 USUARIOS_FILE = 'usuarios.json'
 
 EMAIL_REMETENTE_USER = os.getenv("GMAIL_USER")
 EMAIL_REMETENTE_PASS = os.getenv("GMAIL_APP_PASSWORD")
 EMAIL_ADMIN_FALLBACK = os.getenv("EMAIL_ADMIN", EMAIL_REMETENTE_USER)
 
-# --- Gerenciamento de Sessão ---
+# --- Sessão ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = None
     st.session_state.user_id = None
     st.session_state.user_role = None
 
-# ---------------- Funções de Lembretes ----------------
+# === FUNÇÕES AUXILIARES GERAIS ===
+def salvar_com_commit_json(arquivo, dados, mensagem_commit):
+    with open(arquivo, 'w', encoding='utf-8') as f:
+        json.dump(dados, f, indent=4, ensure_ascii=False)
+    token = os.getenv("GITHUB_TOKEN")
+    if token:
+        commit_arquivo_json_para_github(
+            repo_owner="Israel-ETE78",
+            repo_name="lembrete",
+            file_path=arquivo,
+            commit_message=mensagem_commit,
+            token=token
+        )
+    else:
+        st.warning(f"⚠️ GITHUB_TOKEN não encontrado. Commit automático de '{arquivo}' não realizado.")
+
 def commit_arquivo_json_para_github(repo_owner, repo_name, file_path, commit_message, token):
-    """
-    Atualiza ou cria um arquivo no repositório GitHub via API.
-    """
-    # Lê o conteúdo do arquivo local
     with open(file_path, 'rb') as f:
         content = f.read()
     encoded_content = base64.b64encode(content).decode()
-
-    # URL da API do GitHub para o arquivo
     url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
-    
     headers = {
         "Authorization": f"token {token}",
         "Content-Type": "application/json"
     }
 
-    # Tenta obter o SHA do arquivo se ele já existe
     sha = None
     try:
         response = requests.get(url, headers=headers)
-        response.raise_for_status()
         if response.status_code == 200:
             sha = response.json().get("sha")
     except requests.exceptions.RequestException:
-        pass # Ignora erro se o arquivo não existe ou não pode ser acessado
+        pass
 
     data = {
         "message": commit_message,
@@ -74,53 +80,36 @@ def commit_arquivo_json_para_github(repo_owner, repo_name, file_path, commit_mes
         response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao commitar {file_path} para o GitHub: {e}")
+        st.error(f"Erro ao enviar {file_path} para o GitHub: {e}")
         return False
 
+# === FUNÇÕES DE LEMBRETES ===
 
 def carregar_lembretes():
     if not os.path.exists(LEMBRETES_FILE):
         with open(LEMBRETES_FILE, 'w', encoding='utf-8') as f:
             json.dump([], f)
+
     try:
         with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes = json.load(f)
-            # Garante que todo lembrete tenha 'user_id' para evitar KeyError em DataFrames futuros
-            for lembrete in all_lembretes:
-                lembrete.setdefault('user_id', None) # Define como None se não existir
-            
+            todos = json.load(f)
+            for lembrete in todos:
+                lembrete.setdefault('user_id', None)
+
             if st.session_state.logged_in and st.session_state.user_role == 'admin':
-                return all_lembretes
+                return todos
             elif st.session_state.logged_in:
-                return [l for l in all_lembretes if l.get('user_id') == st.session_state.user_id]
+                return [l for l in todos if l.get('user_id') == st.session_state.user_id]
             else:
                 return []
     except json.JSONDecodeError:
         return []
 
 def salvar_lembretes(lembretes):
-    with open(LEMBRETES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(lembretes, f, indent=4, ensure_ascii=False)
-    
-    token = os.getenv("GITHUB_TOKEN")
-    if token:
-        commit_arquivo_json_para_github(
-            repo_owner="Israel-ETE78",
-            repo_name="lembrete",
-            file_path=LEMBRETES_FILE,
-            commit_message="🔄 Atualização automática dos lembretes",
-            token=token
-        )
-    else:
-        st.warning("⚠️ GITHUB_TOKEN não encontrado. Commit automático não realizado.")
+    salvar_com_commit_json(LEMBRETES_FILE, lembretes, "🔄 Atualização automática dos lembretes")
 
 def adicionar_lembrete(titulo, descricao, data, hora):
-    try:
-        with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        all_lembretes = []
-
+    lembretes = carregar_lembretes()
     novo = {
         "id": str(uuid.uuid4()),
         "titulo": titulo,
@@ -130,179 +119,113 @@ def adicionar_lembrete(titulo, descricao, data, hora):
         "enviado": False,
         "user_id": st.session_state.user_id
     }
-    all_lembretes.append(novo)
-    salvar_lembretes(all_lembretes)
+    lembretes.append(novo)
+    salvar_lembretes(lembretes)
     st.success("Lembrete adicionado!")
 
 def editar_lembrete(id, titulo, descricao, data, hora):
-    try:
-        with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        st.error("Erro: Arquivo de lembretes não encontrado ou corrompido ao editar.")
-        return
-
-    found = False
-    for l in all_lembretes:
-        if l['id'] == id:
-            if st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id:
-                l['titulo'] = titulo
-                l['descricao'] = descricao
-                l['data'] = data
-                l['hora'] = hora
-                l['enviado'] = False
-                found = True
-                break
-            else:
-                st.warning("Você não tem permissão para editar este lembrete.")
-                return
-
-    if found:
-        salvar_lembretes(all_lembretes)
-        st.success("Lembrete atualizado!")
-    else:
-        st.error("Lembrete não encontrado para edição.")
+    lembretes = carregar_lembretes()
+    for l in lembretes:
+        if l['id'] == id and (st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id):
+            l.update({
+                'titulo': titulo,
+                'descricao': descricao,
+                'data': data,
+                'hora': hora,
+                'enviado': False
+            })
+            salvar_lembretes(lembretes)
+            st.success("Lembrete atualizado!")
+            return
+    st.warning("Você não tem permissão ou lembrete não encontrado.")
 
 def excluir_lembrete(id):
-    try:
-        with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        st.error("Erro: Arquivo de lembretes não encontrado ou corrompido ao excluir.")
-        return
-
-    lembretes_apos_exclusao = []
-    removed = False
-    for l in all_lembretes:
-        if l['id'] == id:
-            if st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id:
-                removed = True
-                continue
-            else:
-                st.warning("Você não tem permissão para excluir este lembrete.")
-                return
-        lembretes_apos_exclusao.append(l)
-
-    if removed:
-        salvar_lembretes(lembretes_apos_exclusao)
+    lembretes = carregar_lembretes()
+    novo_lista = []
+    removido = False
+    for l in lembretes:
+        if l['id'] == id and (st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id):
+            removido = True
+            continue
+        novo_lista.append(l)
+    if removido:
+        salvar_lembretes(novo_lista)
         st.success("Lembrete excluído!")
     else:
-        st.error("Lembrete não encontrado para exclusão.")
+        st.warning("Você não tem permissão ou lembrete não encontrado.")
 
-
-# ---------------- Funções de Gerenciamento de Usuários ----------------
+# === USUÁRIOS ===
 
 def hash_password(password):
-    """Gera o hash de uma senha."""
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    return hashed.decode('utf-8')
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def check_password(password, hashed_password):
-    """Verifica se uma senha corresponde ao seu hash."""
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 def carregar_usuarios():
-    """Carrega os dados dos usuários do arquivo JSON."""
     if not os.path.exists(USUARIOS_FILE):
         admin_id = str(uuid.uuid4())
-        initial_users = [{
+        inicial = [{
             "id": admin_id,
             "username": "admin",
             "password_hash": hash_password("admin123"),
             "role": "admin"
         }]
-        with open(USUARIOS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(initial_users, f, indent=4, ensure_ascii=False)
-        return initial_users
+        salvar_com_commit_json(USUARIOS_FILE, inicial, "🛡️ Criação inicial de usuários")
+        return inicial
     try:
         with open(USUARIOS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     except json.JSONDecodeError:
-        st.error(f"Erro ao carregar o arquivo de usuários '{USUARIOS_FILE}'. Criando um novo.")
         return []
 
 def salvar_usuarios(usuarios):
-    """Salva os dados dos usuários no arquivo JSON."""
-    with open(USUARIOS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(usuarios, f, indent=4, ensure_ascii=False)
-    
-    token = os.getenv("GITHUB_TOKEN")
-    if token:
-        commit_arquivo_json_para_github(
-            repo_owner="Israel-ETE78",
-            repo_name="lembrete",
-            file_path=USUARIOS_FILE,
-            commit_message="🔄 Atualização automática dos usuários",
-            token=token
-        )
-    else:
-        st.warning("⚠️ GITHUB_TOKEN não encontrado. Commit automático de usuários não realizado.")
+    salvar_com_commit_json(USUARIOS_FILE, usuarios, "🔄 Atualização automática dos usuários")
 
 def get_user_by_username(username):
-    """Retorna os dados de um usuário pelo nome de usuário."""
-    usuarios = carregar_usuarios()
-    for user in usuarios:
-        if user['username'] == username:
-            return user
-    return None
+    return next((u for u in carregar_usuarios() if u['username'] == username), None)
 
 def adicionar_usuario(username, password, role):
-    """Adiciona um novo usuário ao sistema."""
     usuarios = carregar_usuarios()
     if any(u['username'] == username for u in usuarios):
         return False, "Nome de usuário já existe."
-    
-    novo_usuario = {
+    novo = {
         "id": str(uuid.uuid4()),
         "username": username,
         "password_hash": hash_password(password),
         "role": role
     }
-    usuarios.append(novo_usuario)
+    usuarios.append(novo)
     salvar_usuarios(usuarios)
     return True, "Usuário adicionado com sucesso!"
 
 def editar_usuario(user_id, new_username, new_password, new_role):
-    """Edita um usuário existente."""
     usuarios = carregar_usuarios()
-    for i, user in enumerate(usuarios):
-        if user['id'] == user_id:
-            usuarios[i]['username'] = new_username
+    for u in usuarios:
+        if u["id"] == user_id:
+            u["username"] = new_username
             if new_password:
-                usuarios[i]['password_hash'] = hash_password(new_password)
-            usuarios[i]['role'] = new_role
+                u["password_hash"] = hash_password(new_password)
+            u["role"] = new_role
             salvar_usuarios(usuarios)
             return True, "Usuário atualizado com sucesso!"
     return False, "Usuário não encontrado."
 
 def excluir_usuario(user_id):
-    """Exclui um usuário e todos os seus lembretes."""
     usuarios = carregar_usuarios()
+    novos = [u for u in usuarios if u["id"] != user_id]
+    if len(novos) == len(usuarios):
+        return False
+    salvar_usuarios(novos)
     
-    try:
-        with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes_system = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        all_lembretes_system = []
+    lembretes = carregar_lembretes()
+    lembretes = [l for l in lembretes if l.get("user_id") != user_id]
+    salvar_lembretes(lembretes)
+    return True
 
-    usuarios_restantes = [u for u in usuarios if u['id'] != user_id]
-    lembretes_restantes = [l for l in all_lembretes_system if l.get('user_id') != user_id]
+# === CONFIGURAÇÃO E-MAIL POR USUÁRIO ===
 
-    if len(usuarios_restantes) < len(usuarios):
-        salvar_usuarios(usuarios_restantes)
-        st.success(f"Usuário excluído com sucesso! {len(usuarios) - len(usuarios_restantes)} usuários removidos.")
-        
-        if len(lembretes_restantes) < len(all_lembretes_system):
-            salvar_lembretes(lembretes_restantes)
-            st.warning(f"Todos os lembretes do usuário excluído também foram removidos. {len(all_lembretes_system) - len(lembretes_restantes)} lembretes removidos.")
-        return True
-    return False
-
-# ---------------- Funções de Config (Per-User Email) ----------------
-
-# Função para carregar a configuração (e-mail) do usuário logado
 def carregar_configuracoes_usuario(user_id):
-    """Carrega a configuração (e-mail) de um usuário específico."""
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -311,21 +234,21 @@ def carregar_configuracoes_usuario(user_id):
         return {}
 
 def salvar_configuracoes_usuario(email_destino):
-    # Carrega o config atual
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         config = {}
-    # Atualiza o e-mail do usuário logado
-    if st.session_state.user_id: # Only save if a user is logged in
+
+    if st.session_state.user_id:
         config[st.session_state.user_id] = {"email_destino": email_destino}
     else:
         st.error("Nenhum usuário logado para salvar as configurações de e-mail.")
         return False
+
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
-    
+
     token = os.getenv("GITHUB_TOKEN")
     if token:
         commit_arquivo_json_para_github(
@@ -337,10 +260,9 @@ def salvar_configuracoes_usuario(email_destino):
         )
     else:
         st.warning("⚠️ GITHUB_TOKEN não encontrado. Commit automático não realizado.")
-    return True # Indicate success
+    return True
 
 def get_email_por_user_id(user_id):
-    """Retorna o e-mail de lembrete salvo por um usuário específico."""
     try:
         with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
             config = json.load(f)
@@ -348,7 +270,8 @@ def get_email_por_user_id(user_id):
     except (FileNotFoundError, json.JSONDecodeError):
         return EMAIL_ADMIN_FALLBACK
 
-# ---------------- Funções de Envio de E-mail ----------------
+# === ENVIO DE EMAIL ===
+
 def enviar_email(destino, assunto, corpo):
     if not EMAIL_REMETENTE_USER or not EMAIL_REMETENTE_PASS:
         st.error("Erro: Credenciais de e-mail não configuradas no ambiente.")
@@ -371,55 +294,50 @@ def enviar_email(destino, assunto, corpo):
         st.error(f"Erro ao enviar e-mail: {e}. Verifique as credenciais e o e-mail de destino.")
         return False
 
+# === VERIFICAÇÃO E ENVIO AUTOMÁTICO DE LEMBRETES ===
+
 def verificar_e_enviar_lembretes_local():
-    # Esta função precisa de TODOS os lembretes do sistema, não apenas os do usuário logado
-    
-    lembretes_para_salvar = []
-    
     try:
         with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_system_lembretes = json.load(f)
+            all_lembretes = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        all_system_lembretes = []
+        all_lembretes = []
 
-    current_time_brasil = datetime.now(FUSO_HORARIO_BRASIL)
-    
-    for lembrete in all_system_lembretes:
-        lembrete.setdefault('user_id', None) # Define como None se não existir
-        email_destino = get_email_por_user_id(lembrete.get("user_id")) # Get email for THIS reminder's user
-        
-        if not lembrete['enviado']:
-            data_hora_lembrete_str = f"{lembrete['data']} {lembrete['hora']}"
-            
+    hora_atual = datetime.now(FUSO_HORARIO_BRASIL)
+    lembretes_atualizados = []
+
+    for lembrete in all_lembretes:
+        lembrete.setdefault('user_id', None)
+        if not lembrete.get('enviado', False):
+            data_hora_str = f"{lembrete['data']} {lembrete['hora']}"
             try:
-                data_hora_lembrete = FUSO_HORARIO_BRASIL.localize(datetime.strptime(data_hora_lembrete_str, "%Y-%m-%d %H:%M"))
+                data_hora_lembrete = FUSO_HORARIO_BRASIL.localize(datetime.strptime(data_hora_str, "%Y-%m-%d %H:%M"))
+            except Exception as e:
+                st.error(f"Formato de data/hora inválido no lembrete '{lembrete.get('titulo', '')}': {e}")
+                lembretes_atualizados.append(lembrete)
+                continue
 
-                if current_time_brasil >= data_hora_lembrete:
-                    if email_destino: # Ensure there is a destination email
-                        assunto = f"Lembrete: {lembrete['titulo']}"
-                        corpo = f"Olá!\n\nEste é um lembrete:\n\nTítulo: {lembrete['titulo']}\nDescrição: {lembrete['descricao']}\n\nData e Hora: {lembrete['data']} às {lembrete['hora']}"
-                        
-                        if enviar_email(email_destino, assunto, corpo):
-                            lembrete['enviado'] = True
-                        else:
-                            st.error(f"Falha ao enviar lembrete '{lembrete['titulo']}'.")
+            if hora_atual >= data_hora_lembrete:
+                email_destino = get_email_por_user_id(lembrete.get('user_id'))
+                if email_destino:
+                    assunto = f"Lembrete: {lembrete['titulo']}"
+                    corpo = f"Olá!\n\nEste é um lembrete:\n\nTítulo: {lembrete['titulo']}\nDescrição: {lembrete['descricao']}\nData e Hora: {lembrete['data']} às {lembrete['hora']}"
+                    if enviar_email(email_destino, assunto, corpo):
+                        lembrete['enviado'] = True
                     else:
-                        st.warning(f"Lembrete '{lembrete['titulo']}' não enviado: E-mail de destino não configurado para o usuário {lembrete.get('user_id') or 'sem usuário'}.")
-            except ValueError as e:
-                st.error(f"Erro no formato de data/hora do lembrete '{lembrete['titulo']}': {e}")
-            except pytz.exceptions.AmbiguousTimeError:
-                st.error(f"Erro de horário ambíguo para o lembrete '{lembrete['titulo']}'. Verifique o horário de verão.")
-            except pytz.exceptions.NonExistentTimeError:
-                st.error(f"Erro de horário inexistente para o lembrete '{lembrete['titulo']}'. Verifique o horário de verão.")
-        lembretes_para_salvar.append(lembrete)
+                        st.error(f"Falha ao enviar lembrete '{lembrete['titulo']}' para {email_destino}")
+                else:
+                    st.warning(f"E-mail de destino não configurado para usuário do lembrete '{lembrete.get('titulo')}'.")
+        lembretes_atualizados.append(lembrete)
 
-    salvar_lembretes(lembretes_para_salvar)
+    salvar_lembretes(lembretes_atualizados)
 
+# === INTERFACE STREAMLIT ===
 
-# ---------------- Interface do Streamlit ----------------
 st.set_page_config(layout="wide", page_title="Jarvis Lembretes")
 st.title("⏰ Jarvis - Sistema de Lembretes Inteligente")
 
+# Login
 if not st.session_state.logged_in:
     st.header("Faça Login para Continuar")
     with st.form("login_form"):
@@ -438,12 +356,12 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("Nome de usuário ou senha inválidos.")
-    st.info("O usuário administrador padrão é 'admin' com a senha 'admin123'. Altere-a após o primeiro login.")
+    st.info("Usuário padrão: admin / admin123. Altere após o primeiro login.")
 
 else:
     st.sidebar.markdown(f"**Usuário:** {st.session_state.username}")
     st.sidebar.markdown(f"**Função:** {st.session_state.user_role.capitalize()}")
-    if st.sidebar.button("Sair", type="secondary"):
+    if st.sidebar.button("Sair"):
         st.session_state.logged_in = False
         st.session_state.username = None
         st.session_state.user_id = None
@@ -473,12 +391,12 @@ else:
 
     with tab2:
         st.header("Meus Lembretes")
-        lembretes_do_usuario = carregar_lembretes()
-        if not lembretes_do_usuario:
+        lembretes_usuario = carregar_lembretes()
+        if not lembretes_usuario:
             st.info("Nenhum lembrete para este usuário.")
         else:
             try:
-                df = pd.DataFrame(lembretes_do_usuario)
+                df = pd.DataFrame(lembretes_usuario)
                 df["Data e Hora"] = pd.to_datetime(df["data"] + " " + df["hora"], errors='coerce')
                 df = df.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
                 df["Enviado"] = df["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
@@ -491,31 +409,26 @@ else:
                     st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado", "Usuário"]], use_container_width=True, hide_index=True)
                 else:
                     st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado"]], use_container_width=True, hide_index=True)
-
             except Exception as e:
-                st.error(f"Não foi possível exibir os lembretes. Verifique o arquivo JSON. Erro: {e}")
+                st.error(f"Erro ao exibir lembretes: {e}")
 
         st.subheader("Editar ou Excluir")
-        opcoes = {l["id"]: f"{l['titulo']} - {l['data']} {l['hora']}" for l in lembretes_do_usuario}
-        
+        opcoes = {l["id"]: f"{l['titulo']} - {l['data']} {l['hora']}" for l in lembretes_usuario}
         if opcoes:
             selecionado = st.selectbox("Selecione um lembrete", list(opcoes.keys()), format_func=lambda x: opcoes[x], key="select_lembrete_to_edit")
-
             if selecionado:
-                item = next((l for l in lembretes_do_usuario if l["id"] == selecionado), None)
+                item = next((l for l in lembretes_usuario if l["id"] == selecionado), None)
                 if item:
                     with st.form("editar_form"):
                         novo_titulo = st.text_input("Título", value=item["titulo"])
                         nova_desc = st.text_area("Descrição", value=item["descricao"])
                         data_atual = datetime.strptime(item["data"], "%Y-%m-%d")
                         hora_atual = datetime.strptime(item["hora"], "%H:%M").time()
-
                         col_data, col_hora = st.columns(2)
                         with col_data:
                             nova_data = st.date_input("Data", value=data_atual)
                         with col_hora:
                             nova_hora = st.time_input("Hora", value=hora_atual)
-                        
                         col1, col2 = st.columns(2)
                         if col1.form_submit_button("Salvar Alterações"):
                             editar_lembrete(item["id"], novo_titulo, nova_desc, str(nova_data), nova_hora.strftime("%H:%M"))
@@ -530,18 +443,16 @@ else:
         else:
             st.info("Não há lembretes para editar ou excluir no momento.")
 
-
     with tab3:
         st.header("Configuração de E-mail")
-        # Ensure user is logged in to get their config
         if st.session_state.logged_in and st.session_state.user_id:
-            config_user = carregar_configuracoes_usuario(st.session_state.user_id) # Call the global function
+            config_user = carregar_configuracoes_usuario(st.session_state.user_id)
             destino = config_user.get("email_destino", "")
             with st.form("email_form"):
                 novo = st.text_input("E-mail para receber lembretes", value=destino)
                 if st.form_submit_button("Salvar E-mail"):
                     if "@" in novo and "." in novo:
-                        if salvar_configuracoes_usuario(novo): # Check if saving was successful
+                        if salvar_configuracoes_usuario(novo):
                             st.success(f"E-mail salvo: {novo}")
                             st.rerun()
                     else:
@@ -549,11 +460,10 @@ else:
         else:
             st.info("Faça login para configurar seu e-mail de lembretes.")
 
-
+    # Área do Admin
     if st.session_state.user_role == "admin":
         st.sidebar.markdown("---")
         st.sidebar.subheader("Área do Administrador ⚙️")
-        
         admin_tab1, admin_tab2 = st.sidebar.tabs(["Gerenciar Usuários", "Todos os Lembretes"])
 
         with admin_tab1:
@@ -572,7 +482,7 @@ else:
                             st.error(message)
                     else:
                         st.error("Nome de usuário e senha são obrigatórios.")
-            
+
             st.subheader("Usuários Existentes")
             usuarios_existentes = carregar_usuarios()
             if usuarios_existentes:
@@ -581,26 +491,18 @@ else:
 
                 st.markdown("---")
                 st.subheader("Editar/Excluir Usuário")
-                
-                user_options_for_select = {}
-                for u in usuarios_existentes:
-                    user_options_for_select[u["id"]] = u["username"]
+                user_options_for_select = {u["id"]: u["username"] for u in usuarios_existentes}
 
                 if user_options_for_select:
-                    selected_user_to_manage = st.selectbox("Selecione um usuário", list(user_options_for_select.keys()), format_func=lambda x: user_options_for_select[x], key="select_user_to_manage")
-
-                    if selected_user_to_manage:
-                        user_to_edit = next((u for u in usuarios_existentes if u["id"] == selected_user_to_manage), None)
+                    selected_user = st.selectbox("Selecione um usuário", list(user_options_for_select.keys()), format_func=lambda x: user_options_for_select[x], key="select_user_to_manage")
+                    if selected_user:
+                        user_to_edit = next((u for u in usuarios_existentes if u["id"] == selected_user), None)
                         if user_to_edit:
                             with st.form("edit_user_form"):
                                 edit_username = st.text_input("Nome de Usuário", value=user_to_edit["username"], key="edit_username")
                                 edit_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password", key="edit_password")
-                                try:
-                                    role_index = ["normal", "admin"].index(user_to_edit["role"])
-                                except ValueError:
-                                    role_index = 0
+                                role_index = ["normal", "admin"].index(user_to_edit["role"]) if user_to_edit["role"] in ["normal", "admin"] else 0
                                 edit_role = st.selectbox("Função", ["normal", "admin"], index=role_index, key="edit_role")
-                                
                                 col_edit_user, col_delete_user = st.columns(2)
                                 if col_edit_user.form_submit_button("Salvar Alterações do Usuário"):
                                     success, message = editar_usuario(user_to_edit["id"], edit_username, edit_password, edit_role)
@@ -609,7 +511,6 @@ else:
                                         st.rerun()
                                     else:
                                         st.error(message)
-                                
                                 if col_delete_user.form_submit_button("Excluir Usuário e Lembretes", type="primary"):
                                     if user_to_edit["id"] == st.session_state.user_id:
                                         st.error("Você não pode excluir a si mesmo!")
@@ -617,6 +518,7 @@ else:
                                         st.error("Não é possível excluir o último administrador.")
                                     else:
                                         if excluir_usuario(user_to_edit["id"]):
+                                            st.success("Usuário e seus lembretes excluídos.")
                                             st.rerun()
                         else:
                             st.warning("Selecione um usuário válido para gerenciar.")
@@ -627,27 +529,26 @@ else:
             st.subheader("Todos os Lembretes do Sistema")
             try:
                 with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-                    all_lembretes_admin_view = json.load(f)
+                    all_lembretes = json.load(f)
             except (json.JSONDecodeError, FileNotFoundError):
-                all_lembretes_admin_view = []
+                all_lembretes = []
 
-            # Ensure all reminders have 'user_id' before creating the DataFrame
-            for lembrete in all_lembretes_admin_view:
-                lembrete.setdefault('user_id', None) # If 'user_id' does not exist, add with None value
+            for lembrete in all_lembretes:
+                lembrete.setdefault('user_id', None)
 
-            if all_lembretes_admin_view:
-                df_all_lembretes = pd.DataFrame(all_lembretes_admin_view)
-                df_all_lembretes["Data e Hora"] = pd.to_datetime(df_all_lembretes["data"] + " " + df_all_lembretes["hora"], errors='coerce')
-                df_all_lembretes = df_all_lembretes.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
-                df_all_lembretes["Enviado"] = df_all_lembretes["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
-                df_all_lembretes["Data e Hora"] = df_all_lembretes["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
-                
-                # Display all reminders for admin view
+            if all_lembretes:
+                df_all = pd.DataFrame(all_lembretes)
+                df_all["Data e Hora"] = pd.to_datetime(df_all["data"] + " " + df_all["hora"], errors='coerce')
+                df_all = df_all.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
+                df_all["Enviado"] = df_all["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+                df_all["Data e Hora"] = df_all["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+
                 all_users = carregar_usuarios()
                 user_map = {u['id']: u['username'] for u in all_users}
-                df_all_lembretes['Usuário'] = df_all_lembretes['user_id'].map(user_map).fillna('Desconhecido')
-                st.dataframe(df_all_lembretes[["titulo", "descricao", "Data e Hora", "Enviado", "Usuário"]], use_container_width=True, hide_index=True)
+                df_all['Usuário'] = df_all['user_id'].map(user_map).fillna('Desconhecido')
+                st.dataframe(df_all[["titulo", "descricao", "Data e Hora", "Enviado", "Usuário"]], use_container_width=True, hide_index=True)
             else:
                 st.info("Nenhum lembrete no sistema.")
 
-verificar_e_enviar_lembretes_local() # This call needs to be at the very end to ensure all functions are defined and UI is built.
+# Finalmente executa a verificação e envio dos lembretes
+verificar_e_enviar_lembretes_local()

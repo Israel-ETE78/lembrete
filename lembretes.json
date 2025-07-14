@@ -1,14 +1,5 @@
 [
     {
-        "id": "e0ad3ab9-5def-4fe8-8f59-9fd4e5eec0cf",
-        "titulo": "Lazer",
-        "descricao": "hora de lazer com o marindão! ",
-        "data": "2025-07-13",
-        "hora": "18:30",
-        "enviado": true,
-        "user_id": null
-    },
-    {
         "id": "4b546b9b-30ff-49c2-a08d-538537c26daa",
         "titulo": "Dormi",
         "descricao": "hora de dormi",

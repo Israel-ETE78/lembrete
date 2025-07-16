@@ -22,5 +22,11 @@
         "username": "jarvis01",
         "password_hash": "$2b$12$eYnRAS6.MGKCETWuDqTX7On8lTfrI4w5B6vs.fAnj.Je/lJTxv2F2",
         "role": "normal"
+    },
+    {
+        "id": "e08952f6-59e5-441b-9995-d353007a21f8",
+        "username": "jarvis02",
+        "password_hash": "$2b$12$.C3xpHqKTFv/ZSeZ44Fz1uSgQyxrHOQtKySgEJg8jGCICqPY7tNDy",
+        "role": "normal"
     }
 ]

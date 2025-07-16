@@ -10,5 +10,11 @@
         "username": "leidy",
         "password_hash": "$2b$12$xAFtktzBUmpcIK8F435JUeqP0yLrD82Z6OCckU.nQ1P2ZwGiyBrNW",
         "role": "normal"
+    },
+    {
+        "id": "883aec38-84cf-41f8-83fb-89b51b072062",
+        "username": "ingrid",
+        "password_hash": "$2b$12$X7JKBq1JDUf6qyV5FS7gbe6CXemVlzfJ2t5.MX5eti1jR/xmLtBUu",
+        "role": "normal"
     }
 ]

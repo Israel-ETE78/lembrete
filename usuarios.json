@@ -16,5 +16,11 @@
         "username": "ingrid",
         "password_hash": "$2b$12$X7JKBq1JDUf6qyV5FS7gbe6CXemVlzfJ2t5.MX5eti1jR/xmLtBUu",
         "role": "normal"
+    },
+    {
+        "id": "8456449c-3991-43a7-b774-f4689df759a9",
+        "username": "jarvis01",
+        "password_hash": "$2b$12$eYnRAS6.MGKCETWuDqTX7On8lTfrI4w5B6vs.fAnj.Je/lJTxv2F2",
+        "role": "normal"
     }
 ]

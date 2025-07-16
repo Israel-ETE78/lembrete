@@ -52,5 +52,11 @@
         "username": "jarvis06",
         "password_hash": "$2b$12$TuLL.159IlWK93orgPFxDOKy2u9zy.la7X9Wtd09tvgzVJSfnCBgu",
         "role": "normal"
+    },
+    {
+        "id": "3fcd6275-71bc-4026-b07f-69efff28ee86",
+        "username": "jarvis07",
+        "password_hash": "$2b$12$cDOgdAui4bVwyY78aN/5I./E/VG.C0aH4d9utFf9fWyRazhPVrnDu",
+        "role": "normal"
     }
 ]

@@ -33,7 +33,7 @@
         "descricao": "bbbb",
         "data": "2025-07-17",
         "hora": "12:28",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "de4c038b-bc7f-489c-b6b2-dcfbd684a2d9",
@@ -42,6 +42,6 @@
         "descricao": "aiai",
         "data": "2025-07-17",
         "hora": "12:30",
-        "enviado": false
+        "enviado": true
     }
 ]

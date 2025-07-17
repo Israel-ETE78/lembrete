@@ -13,6 +13,7 @@ import requests
 import pytz
 import bcrypt
 import hashlib
+import subprocess
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -37,15 +38,79 @@ if 'logged_in' not in st.session_state:
     st.session_state.senha_inicial_pendente = False
 
 
-# === FUNÇÕES AUXILIARES GERAIS ===
 def salvar_com_commit_json(arquivo, dados, mensagem_commit):
-    """Salva dados em um arquivo JSON e simula um 'commit' simples."""
+    """Salva dados em um arquivo JSON e faz um commit e push para o GitHub."""
     try:
+        # 1. Salva o arquivo localmente no container do Streamlit Cloud
         with open(arquivo, 'w', encoding='utf-8') as f:
             json.dump(dados, f, ensure_ascii=False, indent=4)
-        print(f"DEBUG: Arquivo {arquivo} salvo. Mensagem: {mensagem_commit}")
+        print(f"DEBUG: Arquivo {arquivo} salvo localmente. Mensagem: {mensagem_commit}")
+
+        # 2. Configura as credenciais do Git usando o token do ambiente
+        github_token = os.getenv("GITHUB_TOKEN")
+        if not github_token:
+            st.error("Erro: GITHUB_TOKEN não configurado como secret no Streamlit Cloud. Não foi possível fazer o commit para o GitHub.")
+            print("DEBUG: GITHUB_TOKEN não encontrado nas variáveis de ambiente.")
+            return
+
+        # Configura o git com um usuário genérico para o bot do Streamlit
+        subprocess.run(["git", "config", "user.name", "Streamlit Cloud Bot"], check=True)
+        subprocess.run(["git", "config", "user.email", "streamlit-bot@example.com"], check=True)
+
+        # 3. Adiciona o arquivo às mudanças do Git
+        # Usar --ignore-errors para que não falhe se o arquivo não estiver presente ou rastreado
+        subprocess.run(["git", "add", arquivo], check=False) 
+        print(f"DEBUG: {arquivo} adicionado ao staging do Git.")
+
+        # 4. Verifica se há algo para commitar antes de tentar commitar
+        # git diff-index --quiet HEAD -- (Verifica se há mudanças no diretório de trabalho em relação ao HEAD)
+        # Se houver diferenças, o comando retorna código 1. Se não houver, retorna 0.
+        try:
+            subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], check=True)
+            print("DEBUG: Nenhuma alteração para commitar. Ignorando commit e push.")
+            return # Não há alterações, então não precisa commitar nem fazer push
+        except subprocess.CalledProcessError:
+            # Há alterações, continue para commit
+            pass
+
+        # 5. Faz o commit
+        subprocess.run(["git", "commit", "-m", mensagem_commit], check=True)
+        print(f"DEBUG: Commit realizado com a mensagem: '{mensagem_commit}'.")
+
+        # 6. Faz o push para o repositório remoto
+        # A URL do repositório é modificada para incluir o token para autenticação via HTTPS.
+        # Isso é necessário porque o ambiente do Streamlit não mantém credenciais git automaticamente.
+        
+        # Obtém a URL remota atual
+        current_repo_url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True).stdout.strip()
+        
+        # Converte para URL HTTPS com o token para autenticação
+        # Ex: de 'git@github.com:usuario/repo.git' ou 'https://github.com/usuario/repo.git'
+        # para 'https://oauth2:YOUR_TOKEN@github.com/usuario/repo.git'
+        if current_repo_url.startswith("git@"):
+            repo_path = current_repo_url.split("git@github.com:")[1]
+            push_url = f"https://oauth2:{github_token}@github.com/{repo_path}"
+        elif current_repo_url.startswith("https://"):
+            # Substitui qualquer credencial existente na URL HTTPS ou adiciona se não houver
+            parts = current_repo_url.split("//")
+            # Remove credenciais existentes antes de adicionar as novas
+            host_and_path = parts[1].split("@")[-1] 
+            push_url = f"{parts[0]}//oauth2:{github_token}@{host_and_path}"
+        else:
+            st.error(f"Erro: Formato de URL de repositório desconhecido: {current_repo_url}. Não é possível fazer o push com o token.")
+            print(f"DEBUG: Formato de URL de repositório desconhecido: {current_repo_url}")
+            return
+            
+        subprocess.run(["git", "push", push_url], check=True)
+        print(f"DEBUG: Alterações de {arquivo} empurradas para o GitHub.")
+
+    except subprocess.CalledProcessError as e:
+        error_output = e.stderr.strip() if e.stderr else e.output.strip()
+        st.error(f"Erro no Git ao salvar {arquivo}: {error_output}. Verifique as permissões do seu GITHUB_TOKEN.")
+        print(f"DEBUG: Erro do subprocesso Git: {error_output}")
     except Exception as e:
-        st.error(f"Erro ao salvar {arquivo}: {e}")
+        st.error(f"Erro inesperado ao salvar {arquivo}: {e}")
+        print(f"DEBUG: Erro inesperado ao salvar arquivo: {e}")
 
 def carregar_lembretes():
     try:

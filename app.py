@@ -12,6 +12,7 @@ import base64
 import requests
 import pytz
 import bcrypt
+import hashlib
 
 # Carrega variáveis do .env
 load_dotenv()
@@ -33,248 +34,101 @@ if 'logged_in' not in st.session_state:
     st.session_state.username = None
     st.session_state.user_id = None
     st.session_state.user_role = None
+    st.session_state.senha_inicial_pendente = False
+
 
 # === FUNÇÕES AUXILIARES GERAIS ===
 def salvar_com_commit_json(arquivo, dados, mensagem_commit):
-    with open(arquivo, 'w', encoding='utf-8') as f:
-        json.dump(dados, f, indent=4, ensure_ascii=False)
-    token = os.getenv("GITHUB_TOKEN")
-    if token:
-        commit_arquivo_json_para_github(
-            repo_owner="Israel-ETE78",
-            repo_name="lembrete",
-            file_path=arquivo,
-            commit_message=mensagem_commit,
-            token=token
-        )
-    else:
-        st.warning(f"⚠️ GITHUB_TOKEN não encontrado. Commit automático de '{arquivo}' não realizado.")
-
-def commit_arquivo_json_para_github(repo_owner, repo_name, file_path, commit_message, token):
-    with open(file_path, 'rb') as f:
-        content = f.read()
-    encoded_content = base64.b64encode(content).decode()
-    url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/contents/{file_path}"
-    headers = {
-        "Authorization": f"token {token}",
-        "Content-Type": "application/json"
-    }
-
-    sha = None
+    """Salva dados em um arquivo JSON e simula um 'commit' simples."""
     try:
-        response = requests.get(url, headers=headers)
-        if response.status_code == 200:
-            sha = response.json().get("sha")
-    except requests.exceptions.RequestException:
-        pass
-
-    data = {
-        "message": commit_message,
-        "content": encoded_content
-    }
-    if sha:
-        data["sha"] = sha
-
-    try:
-        response = requests.put(url, headers=headers, data=json.dumps(data))
-        response.raise_for_status()
-        return True
-    except requests.exceptions.RequestException as e:
-        st.error(f"Erro ao enviar {file_path} para o GitHub: {e}")
-        return False
-
-# === FUNÇÕES DE LEMBRETES ===
+        with open(arquivo, 'w', encoding='utf-8') as f:
+            json.dump(dados, f, ensure_ascii=False, indent=4)
+        print(f"DEBUG: Arquivo {arquivo} salvo. Mensagem: {mensagem_commit}")
+    except Exception as e:
+        st.error(f"Erro ao salvar {arquivo}: {e}")
 
 def carregar_lembretes():
-    if not os.path.exists(LEMBRETES_FILE):
-        with open(LEMBRETES_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f)
-
     try:
         with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            todos = json.load(f)
-            for lembrete in todos:
-                lembrete.setdefault('user_id', None)
-
-            if st.session_state.logged_in and st.session_state.user_role == 'admin':
-                return todos
-            elif st.session_state.logged_in:
-                return [l for l in todos if l.get('user_id') == st.session_state.user_id]
-            else:
-                return []
-    except json.JSONDecodeError:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
         return []
 
-def salvar_lembretes(lembretes):
-    salvar_com_commit_json(LEMBRETES_FILE, lembretes, "🔄 Atualização automática dos lembretes")
+def salvar_lembretes(lembretes, mensagem_commit="Lembretes atualizados."):
+    salvar_com_commit_json(LEMBRETES_FILE, lembretes, mensagem_commit)
 
-def adicionar_lembrete(titulo, descricao, data, hora):
-    lembretes = carregar_lembretes()
-    novo = {
-        "id": str(uuid.uuid4()),
-        "titulo": titulo,
-        "descricao": descricao,
-        "data": data,
-        "hora": hora,
-        "enviado": False,
-        "user_id": st.session_state.user_id
-    }
-    lembretes.append(novo)
-    salvar_lembretes(lembretes)
-    st.success("Lembrete adicionado!")
+def carregar_configuracoes():
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
 
-def editar_lembrete(id, titulo, descricao, data, hora):
-    lembretes = carregar_lembretes()
-    for l in lembretes:
-        if l['id'] == id and (st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id):
-            l.update({
-                'titulo': titulo,
-                'descricao': descricao,
-                'data': data,
-                'hora': hora,
-                'enviado': False
-            })
-            salvar_lembretes(lembretes)
-            st.success("Lembrete atualizado!")
-            return
-    st.warning("Você não tem permissão ou lembrete não encontrado.")
-
-def excluir_lembrete(id):
-    lembretes = carregar_lembretes()
-    novo_lista = []
-    removido = False
-    for l in lembretes:
-        if l['id'] == id and (st.session_state.user_role == 'admin' or l.get('user_id') == st.session_state.user_id):
-            removido = True
-            continue
-        novo_lista.append(l)
-    if removido:
-        salvar_lembretes(novo_lista)
-        st.success("Lembrete excluído!")
-    else:
-        st.warning("Você não tem permissão ou lembrete não encontrado.")
-
-# === USUÁRIOS ===
-
-def hash_password(password):
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def check_password(password, hashed_password):
-    return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+def salvar_configuracoes(configuracoes, mensagem_commit="Configurações atualizadas."):
+    salvar_com_commit_json(CONFIG_FILE, configuracoes, mensagem_commit)
 
 def carregar_usuarios():
-    if not os.path.exists(USUARIOS_FILE):
-        admin_id = str(uuid.uuid4())
-        inicial = [{
-            "id": admin_id,
-            "username": "admin",
-            "password_hash": hash_password("admin123"),
-            "role": "admin"
-        }]
-        salvar_com_commit_json(USUARIOS_FILE, inicial, "🛡️ Criação inicial de usuários")
-        return inicial
     try:
         with open(USUARIOS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except json.JSONDecodeError:
+            usuarios = json.load(f)
+            # ADICIONADO PARA COMPATIBILIDADE RETROATIVA:
+            for user in usuarios:
+                if "senha_inicial_definida" not in user:
+                    user["senha_inicial_definida"] = True # Usuários existentes são considerados com senha inicial definida
+            return usuarios
+    except (json.JSONDecodeError, FileNotFoundError):
         return []
 
-def salvar_usuarios(usuarios):
-    salvar_com_commit_json(USUARIOS_FILE, usuarios, "🔄 Atualização automática dos usuários")
-
-def get_user_by_username(username):
-    return next((u for u in carregar_usuarios() if u['username'] == username), None)
+def salvar_usuarios(usuarios, mensagem_commit="Usuários atualizados."):
+    salvar_com_commit_json(USUARIOS_FILE, usuarios, mensagem_commit)
 
 def adicionar_usuario(username, password, role):
     usuarios = carregar_usuarios()
     if any(u['username'] == username for u in usuarios):
-        return False, "Nome de usuário já existe."
-    novo = {
+        return False, "Usuário já existe."
+
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    novo_usuario = {
         "id": str(uuid.uuid4()),
         "username": username,
-        "password_hash": hash_password(password),
-        "role": role
+        "password_hash": hashed_password,
+        "role": role,
+        "senha_inicial_definida": False
     }
-    usuarios.append(novo)
-    salvar_usuarios(usuarios)
-    return True, "Usuário adicionado com sucesso!"
+    usuarios.append(novo_usuario)
+    salvar_usuarios(usuarios, f"Adicionado novo usuário: {username}")
+    return True, "Usuário adicionado com sucesso."
 
-def editar_usuario(user_id, new_username, new_password, new_role):
+def editar_usuario(user_id, novo_username, nova_role=None, nova_senha=None):
     usuarios = carregar_usuarios()
-    for u in usuarios:
-        if u["id"] == user_id:
-            u["username"] = new_username
-            if new_password:
-                u["password_hash"] = hash_password(new_password)
-            u["role"] = new_role
-            salvar_usuarios(usuarios)
+    user_found = False
+    for i, user in enumerate(usuarios):
+        if user['id'] == user_id:
+            user_found = True
+            if any(u['username'] == novo_username and u['id'] != user_id for u in usuarios):
+                return False, "Nome de usuário já existe."
+
+            usuarios[i]['username'] = novo_username
+            if nova_role:
+                usuarios[i]['role'] = nova_role
+            if nova_senha:
+                hashed_new_password = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                usuarios[i]['password_hash'] = hashed_new_password
+            salvar_usuarios(usuarios, f"Usuário {novo_username} editado.")
             return True, "Usuário atualizado com sucesso!"
     return False, "Usuário não encontrado."
 
-def excluir_usuario(user_id):
+def deletar_usuario(user_id):
     usuarios = carregar_usuarios()
-    novos = [u for u in usuarios if u["id"] != user_id]
-    if len(novos) == len(usuarios):
-        return False
-    salvar_usuarios(novos)
-    
-    lembretes = carregar_lembretes()
-    lembretes = [l for l in lembretes if l.get("user_id") != user_id]
-    salvar_lembretes(lembretes)
-    return True
+    usuarios_restantes = [u for u in usuarios if u['id'] != user_id]
+    if len(usuarios_restantes) < len(usuarios):
+        salvar_usuarios(usuarios_restantes, f"Usuário com ID {user_id} deletado.")
+        return True, "Usuário deletado com sucesso."
+    return False, "Usuário não encontrado."
 
-# === CONFIGURAÇÃO E-MAIL POR USUÁRIO ===
-
-def carregar_configuracoes_usuario(user_id):
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            return config.get(user_id, {})
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def salvar_configuracoes_usuario(email_destino):
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        config = {}
-
-    if st.session_state.user_id:
-        config[st.session_state.user_id] = {"email_destino": email_destino}
-    else:
-        st.error("Nenhum usuário logado para salvar as configurações de e-mail.")
-        return False
-
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
-
-    token = os.getenv("GITHUB_TOKEN")
-    if token:
-        commit_arquivo_json_para_github(
-            repo_owner="Israel-ETE78",
-            repo_name="lembrete",
-            file_path=CONFIG_FILE,
-            commit_message="🔄 Atualização automática das configurações",
-            token=token
-        )
-    else:
-        st.warning("⚠️ GITHUB_TOKEN não encontrado. Commit automático não realizado.")
-    return True
-
-def get_email_por_user_id(user_id):
-    try:
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            return config.get(user_id, {}).get("email_destino", EMAIL_ADMIN_FALLBACK)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return EMAIL_ADMIN_FALLBACK
-
-# === ENVIO DE EMAIL ===
-
-def enviar_email(destino, assunto, corpo):
+def enviar_email(destino, assunto, corpo, usuario_id=None):
     if not EMAIL_REMETENTE_USER or not EMAIL_REMETENTE_PASS:
-        st.error("Erro: Credenciais de e-mail não configuradas no ambiente.")
+        st.error("Credenciais de e-mail não configuradas. Verifique as variáveis de ambiente GMAIL_USER e GMAIL_APP_PASSWORD.")
         return False
 
     try:
@@ -284,246 +138,333 @@ def enviar_email(destino, assunto, corpo):
         msg['Subject'] = assunto
         msg.attach(MIMEText(corpo, 'plain'))
 
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(EMAIL_REMETENTE_USER, EMAIL_REMETENTE_PASS)
-        text = msg.as_string()
-        server.sendmail(EMAIL_REMETENTE_USER, destino, text)
-        server.quit()
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as smtp:
+            smtp.login(EMAIL_REMETENTE_USER, EMAIL_REMETENTE_PASS)
+            smtp.send_message(msg)
         return True
     except Exception as e:
-        st.error(f"Erro ao enviar e-mail: {e}. Verifique as credenciais e o e-mail de destino.")
+        st.error(f"Erro ao enviar e-mail para {destino}: {e}")
         return False
 
-# === VERIFICAÇÃO E ENVIO AUTOMÁTICO DE LEMBRETES ===
+def get_gravatar_url(email):
+    if not email:
+        return "https://www.gravatar.com/avatar/?d=mp"
+    email_hash = hashlib.md5(email.lower().strip().encode('utf-8')).hexdigest()
+    return f"https://www.gravatar.com/avatar/{email_hash}?d=mp"
 
-def verificar_e_enviar_lembretes_local():
-    try:
-        with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-            all_lembretes = json.load(f)
-    except (json.JSONDecodeError, FileNotFoundError):
-        all_lembretes = []
 
-    hora_atual = datetime.now(FUSO_HORARIO_BRASIL)
-    lembretes_atualizados = []
+# === UI PRINCIPAL - ORDEM CORRIGIDA ===
 
-    for lembrete in all_lembretes:
-        lembrete.setdefault('user_id', None)
-        if not lembrete.get('enviado', False):
-            data_hora_str = f"{lembrete['data']} {lembrete['hora']}"
-            try:
-                data_hora_lembrete = FUSO_HORARIO_BRASIL.localize(datetime.strptime(data_hora_str, "%Y-%m-%d %H:%M"))
-            except Exception as e:
-                st.error(f"Formato de data/hora inválido no lembrete '{lembrete.get('titulo', '')}': {e}")
-                lembretes_atualizados.append(lembrete)
-                continue
+# Bloco para Forçar Troca de Senha no Primeiro Login (PRIORITÁRIO)
+if st.session_state.senha_inicial_pendente:
+    st.title("Troca de Senha no Primeiro Login")
+    st.warning("Por favor, defina uma nova senha para sua conta antes de continuar.")
 
-            if hora_atual >= data_hora_lembrete:
-                email_destino = get_email_por_user_id(lembrete.get('user_id'))
-                if email_destino:
-                    assunto = f"Lembrete: {lembrete['titulo']}"
-                    corpo = f"Olá!\n\nEste é um lembrete:\n\nTítulo: {lembrete['titulo']}\nDescrição: {lembrete['descricao']}\nData e Hora: {lembrete['data']} às {lembrete['hora']}"
-                    if enviar_email(email_destino, assunto, corpo):
-                        lembrete['enviado'] = True
-                    else:
-                        st.error(f"Falha ao enviar lembrete '{lembrete['titulo']}' para {email_destino}")
+    nova_senha = st.text_input("Nova Senha", type="password", key="nova_senha_inicial")
+    confirma_senha = st.text_input("Confirme a Nova Senha", type="password", key="confirma_senha_inicial")
+
+    if st.button("Definir Nova Senha"):
+        if nova_senha and confirma_senha:
+            if nova_senha == confirma_senha:
+                usuarios = carregar_usuarios()
+                user_index = -1
+                for i, user in enumerate(usuarios):
+                    if user['id'] == st.session_state.user_id:
+                        user_index = i
+                        break
+
+                if user_index != -1:
+                    hashed_new_password = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    usuarios[user_index]['password_hash'] = hashed_new_password
+                    usuarios[user_index]['senha_inicial_definida'] = True
+
+                    salvar_usuarios(usuarios, f"Senha inicial do usuário {st.session_state.username} alterada.")
+
+                    st.success("Sua senha foi atualizada com sucesso! Você será redirecionado para o login.")
+                    st.session_state.senha_inicial_pendente = False
+                    st.session_state.logged_in = True
+                    st.rerun()
                 else:
-                    st.warning(f"E-mail de destino não configurado para usuário do lembrete '{lembrete.get('titulo')}'.")
-        lembretes_atualizados.append(lembrete)
-
-    salvar_lembretes(lembretes_atualizados)
-
-# === INTERFACE STREAMLIT ===
-
-st.set_page_config(layout="wide", page_title="Jarvis Lembretes")
-st.title("⏰ Jarvis - Sistema de Lembretes Inteligente")
-
-# Login
-if not st.session_state.logged_in:
-    st.header("Faça Login para Continuar")
-    with st.form("login_form"):
-        username_input = st.text_input("Nome de Usuário")
-        password_input = st.text_input("Senha", type="password")
-        login_button = st.form_submit_button("Entrar")
-
-        if login_button:
-            user = get_user_by_username(username_input)
-            if user and check_password(password_input, user['password_hash']):
-                st.session_state.logged_in = True
-                st.session_state.username = user['username']
-                st.session_state.user_id = user['id']
-                st.session_state.user_role = user['role']
-                st.success(f"Bem-vindo, {st.session_state.username}!")
-                st.rerun()
+                    st.error("Erro: Usuário não encontrado no sistema.")
             else:
-                st.error("Nome de usuário ou senha inválidos.")
-    
+                st.error("As senhas não coincidem.")
+        else:
+            st.error("Por favor, preencha todos os campos de senha.")
+    st.markdown("---")
+    st.info("Você precisa definir uma nova senha para acessar o sistema.")
 
-else:
-    st.sidebar.markdown(f"**Usuário:** {st.session_state.username}")
-    st.sidebar.markdown(f"**Função:** {st.session_state.user_role.capitalize()}")
+# Lógica de Login (SEGUNDO na ordem)
+elif not st.session_state.logged_in:
+    st.markdown("<h2 style='text-align: center;'>Bem-vindo ao Sistema de Lembretes</h2>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>Faça Login para Continuar</h3>", unsafe_allow_html=True)
+
+    login_col_spacer_left, login_col_form, login_col_spacer_right = st.columns([1,2,1])
+
+    with login_col_form:
+        with st.form("login_form"):
+            username_login = st.text_input("Nome de Usuário", key="username_login_input")
+            password_login = st.text_input("Senha", type="password", key="password_login_input")
+
+            if st.form_submit_button("Entrar"):
+                usuarios = carregar_usuarios()
+                user_found = False
+                for user in usuarios:
+                    if user['username'] == username_login:
+                        user_found = True
+                        print(f"DEBUG: Tentando logar com '{username_login}'. Senha hash armazenada: '{user['password_hash']}'")
+                        print(f"DEBUG: Senha digitada (hash check): '{password_login}'")
+                        if bcrypt.checkpw(password_login.encode('utf-8'), user['password_hash'].encode('utf-8')):
+                            print(f"DEBUG: bcrypt.checkpw retornou TRUE para '{username_login}'.")
+                            st.session_state.username = user['username']
+                            st.session_state.user_id = user['id']
+                            st.session_state.user_role = user['role']
+
+                            if not user.get("senha_inicial_definida", True):
+                                print(f"DEBUG: '{username_login}' tem 'senha_inicial_definida': False. Redirecionando para troca de senha.")
+                                st.session_state.senha_inicial_pendente = True
+                                st.session_state.logged_in = False
+                                st.rerun()
+                            else:
+                                print(f"DEBUG: '{username_login}' tem 'senha_inicial_definida': True. Logando normalmente.")
+                                st.session_state.senha_inicial_pendente = False
+                                st.session_state.logged_in = True
+                                st.rerun()
+                            break
+
+                if not user_found:
+                    st.error("Nome de usuário não encontrado.")
+                elif not st.session_state.logged_in and not st.session_state.senha_inicial_pendente:
+                    print(f"DEBUG: Senha incorreta para o usuário '{username_login}'.")
+                    st.error("Senha incorreta.")
+
+# Lógica de interface principal após login bem-sucedido (ÚLTIMO na ordem)
+elif st.session_state.logged_in:
+    st.sidebar.markdown(f"**Bem-vindo, {st.session_state.username}!**")
     if st.sidebar.button("Sair"):
         st.session_state.logged_in = False
         st.session_state.username = None
         st.session_state.user_id = None
         st.session_state.user_role = None
+        st.session_state.senha_inicial_pendente = False
         st.rerun()
 
-    hora_atual_brasil = datetime.now(FUSO_HORARIO_BRASIL)
+    st.title("Sistema de Lembretes")
 
-    tab1, tab2, tab3 = st.tabs(["Criar Lembrete", "Meus Lembretes", "Configurações de E-mail"])
+    tabs = ["Meus Lembretes"]
+    if st.session_state.user_role == 'admin':
+        tabs.append("Administração")
+    tabs.append("Configurações de E-mail")
 
-    with tab1:
-        st.header("Criar Lembrete")
-        with st.form("form_novo", clear_on_submit=True):
-            titulo = st.text_input("Título", max_chars=100)
+    selected_tab = st.sidebar.radio("Navegação", tabs)
+
+
+    if selected_tab == "Meus Lembretes":
+        st.subheader("Adicionar Novo Lembrete")
+        with st.form("novo_lembrete_form", clear_on_submit=True):
+            titulo = st.text_input("Título do Lembrete")
             descricao = st.text_area("Descrição")
-            col1, col2 = st.columns(2)
-            with col1:
-                data = st.date_input("Data", value=hora_atual_brasil.date())
-            with col2:
-                hora = st.time_input("Hora", value=hora_atual_brasil.time())
-            if st.form_submit_button("Adicionar"):
-                if titulo:
-                    adicionar_lembrete(titulo, descricao, str(data), hora.strftime("%H:%M"))
+            data = st.date_input("Data", min_value=datetime.now(FUSO_HORARIO_BRASIL).date())
+            hora = st.time_input("Hora", value=datetime.now(FUSO_HORARIO_BRASIL).time())
+            submit_button = st.form_submit_button("Salvar Lembrete")
+
+            if submit_button:
+                if titulo and descricao and data and hora:
+                    lembretes = carregar_lembretes()
+                    novo_lembrete = {
+                        "id": str(uuid.uuid4()),
+                        "user_id": st.session_state.user_id,
+                        "titulo": titulo,
+                        "descricao": descricao,
+                        "data": data.strftime('%Y-%m-%d'),
+                        "hora": hora.strftime('%H:%M'),
+                        "enviado": False
+                    }
+                    lembretes.append(novo_lembrete)
+                    salvar_lembretes(lembretes, f"Novo lembrete '{titulo}' adicionado por {st.session_state.username}.")
+                    st.success("Lembrete salvo com sucesso!")
                     st.rerun()
-                else:
-                    st.error("Título obrigatório.")
 
-    with tab2:
-        st.header("Meus Lembretes")
-        lembretes_usuario = carregar_lembretes()
-        if not lembretes_usuario:
-            st.info("Nenhum lembrete para este usuário.")
-        else:
-            try:
-                df = pd.DataFrame(lembretes_usuario)
-                df["Data e Hora"] = pd.to_datetime(df["data"] + " " + df["hora"], errors='coerce')
-                df = df.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
-                df["Enviado"] = df["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
-                df["Data e Hora"] = df["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+        st.subheader("Meus Lembretes Pendentes")
+        lembretes = carregar_lembretes()
 
-                if st.session_state.user_role == 'admin':
-                    all_users = carregar_usuarios()
-                    user_map = {u['id']: u['username'] for u in all_users}
-                    df['Usuário'] = df['user_id'].map(user_map).fillna('Desconhecido')
-                    st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado", "Usuário"]], use_container_width=True, hide_index=True)
-                else:
-                    st.dataframe(df[["titulo", "descricao", "Data e Hora", "Enviado"]], use_container_width=True, hide_index=True)
-            except Exception as e:
-                st.error(f"Erro ao exibir lembretes: {e}")
+        meus_lembretes = [l for l in lembretes if l.get('user_id') == st.session_state.user_id]
 
-        st.subheader("Editar ou Excluir")
-        opcoes = {l["id"]: f"{l['titulo']} - {l['data']} {l['hora']}" for l in lembretes_usuario}
-        if opcoes:
-            selecionado = st.selectbox("Selecione um lembrete", list(opcoes.keys()), format_func=lambda x: opcoes[x], key="select_lembrete_to_edit")
-            if selecionado:
-                item = next((l for l in lembretes_usuario if l["id"] == selecionado), None)
-                if item:
-                    with st.form("editar_form"):
-                        novo_titulo = st.text_input("Título", value=item["titulo"])
-                        nova_desc = st.text_area("Descrição", value=item["descricao"])
-                        data_atual = datetime.strptime(item["data"], "%Y-%m-%d")
-                        hora_atual = datetime.strptime(item["hora"], "%H:%M").time()
-                        col_data, col_hora = st.columns(2)
-                        with col_data:
-                            nova_data = st.date_input("Data", value=data_atual)
-                        with col_hora:
-                            nova_hora = st.time_input("Hora", value=hora_atual)
-                        col1, col2 = st.columns(2)
-                        if col1.form_submit_button("Salvar Alterações"):
-                            editar_lembrete(item["id"], novo_titulo, nova_desc, str(nova_data), nova_hora.strftime("%H:%M"))
+        if meus_lembretes:
+            for lembrete in meus_lembretes:
+                lembrete.setdefault('enviado', False)
+
+            df = pd.DataFrame(meus_lembretes)
+            # CORREÇÃO AQUI: Localiza o fuso horário da coluna 'Data e Hora'
+            df["Data e Hora"] = pd.to_datetime(df["data"] + " " + df["hora"], errors='coerce').dt.tz_localize(FUSO_HORARIO_BRASIL)
+
+            agora = datetime.now(FUSO_HORARIO_BRASIL).replace(second=0, microsecond=0)
+
+            df_pendentes = df[
+                (df["Data e Hora"] > agora) &
+                (df["enviado"] == False)
+            ].sort_values("Data e Hora")
+
+            if not df_pendentes.empty:
+                st.write("Lembretes agendados e pendentes de envio:")
+                df_pendentes["Data e Hora"] = df_pendentes["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+
+                st.dataframe(
+                    df_pendentes[['titulo', 'descricao', 'Data e Hora']],
+                    hide_index=True,
+                    use_container_width=True
+                )
+
+                st.subheader("Deletar Lembretes")
+                lembretes_para_deletar = st.multiselect(
+                    "Selecione o(s) lembrete(s) para deletar:",
+                    options=df_pendentes['titulo'].tolist()
+                )
+                if st.button("Confirmar Deleção"):
+                    if lembretes_para_deletar:
+                        lembretes_atuais = carregar_lembretes()
+                        lembretes_restantes = [
+                            l for l in lembretes_atuais
+                            if not (l.get('user_id') == st.session_state.user_id and l['titulo'] in lembretes_para_deletar)
+                        ]
+                        if len(lembretes_restantes) < len(lembretes_atuais):
+                            salvar_lembretes(lembretes_restantes, f"Lembretes deletados por {st.session_state.username}.")
+                            st.success("Lembrete(s) deletado(s) com sucesso!")
                             st.rerun()
-                        if col2.form_submit_button("Excluir Lembrete", type="primary"):
-                            excluir_lembrete(item["id"])
-                            st.rerun()
-                else:
-                    st.warning("Selecione um lembrete válido para editar/excluir.")
-            else:
-                st.info("Selecione um lembrete para editar ou excluir.")
-        else:
-            st.info("Não há lembretes para editar ou excluir no momento.")
-
-    with tab3:
-        st.header("Configuração de E-mail")
-        if st.session_state.logged_in and st.session_state.user_id:
-            config_user = carregar_configuracoes_usuario(st.session_state.user_id)
-            destino = config_user.get("email_destino", "")
-            with st.form("email_form"):
-                novo = st.text_input("E-mail para receber lembretes", value=destino)
-                if st.form_submit_button("Salvar E-mail"):
-                    if "@" in novo and "." in novo:
-                        if salvar_configuracoes_usuario(novo):
-                            st.success(f"E-mail salvo: {novo}")
-                            st.rerun()
+                        else:
+                            st.warning("Nenhum lembrete selecionado para deletar foi encontrado.")
                     else:
-                        st.error("E-mail inválido.")
-        else:
-            st.info("Faça login para configurar seu e-mail de lembretes.")
+                        st.info("Nenhum lembrete selecionado para deletar.")
+            else:
+                st.info("Nenhum lembrete futuro e pendente de envio encontrado.")
 
-    # Área do Admin
-    if st.session_state.user_role == "admin":
-        st.sidebar.markdown("---")
-        st.sidebar.subheader("Área do Administrador ⚙️")
-        admin_tab1, admin_tab2 = st.sidebar.tabs(["Gerenciar Usuários", "Todos os Lembretes"])
+            st.subheader("Lembretes Já Enviados ou Passados")
+            df_passados_ou_enviados = df[
+                (df["Data e Hora"] <= agora) |
+                (df["enviado"] == True)
+            ].sort_values("Data e Hora", ascending=False)
+
+            if not df_passados_ou_enviados.empty:
+                df_passados_ou_enviados["Data e Hora"] = df_passados_ou_enviados["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+                df_passados_ou_enviados["Enviado"] = df_passados_ou_enviados["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+                st.dataframe(
+                    df_passados_ou_enviados[['titulo', 'descricao', 'Data e Hora', 'Enviado']],
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.info("Nenhum lembrete enviado ou passado encontrado.")
+        else:
+            st.info("Você não tem lembretes cadastrados.")
+
+    elif selected_tab == "Configurações de E-mail":
+        st.subheader("Configurações de E-mail para Lembretes")
+        configuracoes = carregar_configuracoes()
+
+        user_config = configuracoes.get(st.session_state.user_id, {})
+        email_destino_atual = user_config.get("email_destino", "")
+
+        novo_email_destino = st.text_input("Seu E-mail de Destino para Lembretes", value=email_destino_atual)
+
+        if st.button("Salvar E-mail de Destino"):
+            if novo_email_destino:
+                configuracoes[st.session_state.user_id] = {"email_destino": novo_email_destino}
+                salvar_configuracoes(configuracoes, f"E-mail de destino atualizado para {st.session_state.username}.")
+                st.success(f"E-mail de destino salvo como: {novo_email_destino}")
+            else:
+                st.error("Por favor, insira um e-mail de destino válido.")
+
+    elif selected_tab == "Administração" and st.session_state.user_role == 'admin':
+        admin_tab1, admin_tab2 = st.tabs(["Gerenciar Usuários", "Todos os Lembretes"])
 
         with admin_tab1:
-            st.subheader("Adicionar Novo Usuário")
-            with st.form("add_user_form", clear_on_submit=True):
-                new_user_name = st.text_input("Nome de Usuário", key="new_user_name")
-                new_user_pass = st.text_input("Senha", type="password", key="new_user_pass")
-                new_user_role = st.selectbox("Função", ["normal", "admin"], key="new_user_role")
-                if st.form_submit_button("Criar Usuário"):
-                    if new_user_name and new_user_pass:
-                        success, message = adicionar_usuario(new_user_name, new_user_pass, new_user_role)
-                        if success:
-                            st.success(message)
-                            st.rerun()
-                        else:
-                            st.error(message)
-                    else:
-                        st.error("Nome de usuário e senha são obrigatórios.")
+            st.subheader("Gerenciar Usuários")
+            usuarios = carregar_usuarios()
 
-            st.subheader("Usuários Existentes")
-            usuarios_existentes = carregar_usuarios()
-            if usuarios_existentes:
-                df_users = pd.DataFrame(usuarios_existentes)
-                st.dataframe(df_users[["username", "role", "id"]], use_container_width=True, hide_index=True)
+            st.write("### Lista de Usuários")
+            if usuarios:
+                df_users = pd.DataFrame(usuarios)
+                df_display_users = df_users[['username', 'role', 'id', 'senha_inicial_definida']]
+                df_display_users.columns = ['Nome de Usuário', 'Nível de Acesso', 'ID', 'Senha Inicial Definida']
+
+                st.dataframe(df_display_users, hide_index=True, use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("Editar/Excluir Usuário")
-                user_options_for_select = {u["id"]: u["username"] for u in usuarios_existentes}
+                st.write("### Adicionar Novo Usuário")
+                with st.form("add_user_form", clear_on_submit=True):
+                    new_username = st.text_input("Nome de Usuário (Novo)")
+                    new_password = st.text_input("Senha (Novo)", type="password")
+                    confirm_new_password = st.text_input("Confirme a Senha (Novo)", type="password")
+                    new_role = st.selectbox("Nível de Acesso", ["normal", "admin"])
+                    add_user_button = st.form_submit_button("Adicionar Usuário")
 
-                if user_options_for_select:
-                    selected_user = st.selectbox("Selecione um usuário", list(user_options_for_select.keys()), format_func=lambda x: user_options_for_select[x], key="select_user_to_manage")
-                    if selected_user:
-                        user_to_edit = next((u for u in usuarios_existentes if u["id"] == selected_user), None)
-                        if user_to_edit:
-                            with st.form("edit_user_form"):
-                                edit_username = st.text_input("Nome de Usuário", value=user_to_edit["username"], key="edit_username")
-                                edit_password = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password", key="edit_password")
-                                role_index = ["normal", "admin"].index(user_to_edit["role"]) if user_to_edit["role"] in ["normal", "admin"] else 0
-                                edit_role = st.selectbox("Função", ["normal", "admin"], index=role_index, key="edit_role")
-                                col_edit_user, col_delete_user = st.columns(2)
-                                if col_edit_user.form_submit_button("Salvar Alterações do Usuário"):
-                                    success, message = editar_usuario(user_to_edit["id"], edit_username, edit_password, edit_role)
-                                    if success:
-                                        st.success(message)
-                                        st.rerun()
-                                    else:
-                                        st.error(message)
-                                if col_delete_user.form_submit_button("Excluir Usuário e Lembretes", type="primary"):
-                                    if user_to_edit["id"] == st.session_state.user_id:
-                                        st.error("Você não pode excluir a si mesmo!")
-                                    elif user_to_edit["role"] == "admin" and len([u for u in usuarios_existentes if u['role'] == 'admin']) == 1:
-                                        st.error("Não é possível excluir o último administrador.")
-                                    else:
-                                        if excluir_usuario(user_to_edit["id"]):
-                                            st.success("Usuário e seus lembretes excluídos.")
-                                            st.rerun()
+                    if add_user_button:
+                        if new_username and new_password and confirm_new_password:
+                            if new_password == confirm_new_password:
+                                sucesso, mensagem = adicionar_usuario(new_username, new_password, new_role)
+                                if sucesso:
+                                    st.success(f"{mensagem} O usuário precisará trocar a senha no primeiro login.")
+                                    st.rerun()
+                                else:
+                                    st.error(mensagem)
+                            else:
+                                st.error("As senhas não coincidem.")
                         else:
-                            st.warning("Selecione um usuário válido para gerenciar.")
+                            st.error("Por favor, preencha todos os campos para adicionar o usuário.")
+
+                st.markdown("---")
+                st.write("### Editar/Deletar Usuário Existente")
+                user_options = {u['username']: u['id'] for u in usuarios}
+                selected_username = st.selectbox("Selecione um usuário:", options=list(user_options.keys()) if user_options else ["Nenhum usuário"])
+
+                if selected_username and selected_username != "Nenhum usuário":
+                    selected_user_id = user_options[selected_username]
+                    user_to_edit = next(u for u in usuarios if u['id'] == selected_user_id)
+
+                    with st.form(key=f"edit_user_form_{selected_user_id}"):
+                        st.write(f"Editando usuário: **{selected_user_id}**")
+                        novo_username = st.text_input("Novo Nome de Usuário", value=user_to_edit['username'], key=f"edit_username_{selected_user_id}")
+                        nova_role = st.selectbox("Novo Nível de Acesso", ["admin", "normal"], index=["admin", "normal"].index(user_to_edit['role']), key=f"edit_role_{selected_user_id}")
+                        nova_senha = st.text_input("Nova Senha (deixe em branco para não alterar)", type="password", key=f"edit_password_{selected_user_id}")
+
+                        col_edit_del_user_form = st.columns(2)
+                        with col_edit_del_user_form[0]:
+                            submit_edit_user = st.form_submit_button("Salvar Alterações")
+                        with col_edit_del_user_form[1]:
+                            if st.form_submit_button("Deletar Usuário", type="secondary"):
+                                st.session_state[f"confirm_delete_user_{selected_user_id}"] = True
+                                st.rerun()
+
+                        if submit_edit_user:
+                            if nova_senha:
+                                sucesso, mensagem = editar_usuario(selected_user_id, novo_username, nova_role, nova_senha)
+                            else:
+                                sucesso, mensagem = editar_usuario(selected_user_id, novo_username, nova_role)
+
+                            if sucesso:
+                                st.success(mensagem)
+                                st.rerun()
+                            else:
+                                st.error(mensagem)
+
+                    if st.session_state.get(f"confirm_delete_user_{selected_user_id}", False):
+                        st.warning(f"Tem certeza que deseja deletar o usuário {selected_username}? Esta ação é irreversível.")
+                        col_confirm_del = st.columns(2)
+                        with col_confirm_del[0]:
+                            if st.button(f"Confirmar Deleção de {selected_username}", key=f"final_confirm_del_{selected_user_id}"):
+                                sucesso, mensagem = deletar_usuario(selected_user_id)
+                                if sucesso:
+                                    st.success(mensagem)
+                                    st.session_state[f"confirm_delete_user_{selected_user_id}"] = False
+                                    st.rerun()
+                                else:
+                                    st.error(mensagem)
+                        with col_confirm_del[1]:
+                            if st.button("Cancelar Deleção", key=f"cancel_del_{selected_user_id}"):
+                                st.session_state[f"confirm_delete_user_{selected_user_id}"] = False
+                                st.rerun()
                 else:
-                    st.info("Nenhum usuário cadastrado.")
+                    st.info("Nenhum usuário selecionado ou cadastrado para editar/deletar.")
+
 
         with admin_tab2:
             st.subheader("Todos os Lembretes do Sistema")
@@ -546,9 +487,10 @@ else:
                 all_users = carregar_usuarios()
                 user_map = {u['id']: u['username'] for u in all_users}
                 df_all['Usuário'] = df_all['user_id'].map(user_map).fillna('Desconhecido')
-                st.dataframe(df_all[["titulo", "descricao", "Data e Hora", "Enviado", "Usuário"]], use_container_width=True, hide_index=True)
+                st.dataframe(
+                    df_all[['Usuário', 'titulo', 'descricao', 'Data e Hora', 'Enviado']],
+                    hide_index=True,
+                    use_container_width=True
+                )
             else:
-                st.info("Nenhum lembrete no sistema.")
-
-# Finalmente executa a verificação e envio dos lembretes
-verificar_e_enviar_lembretes_local()
+                st.info("Nenhum lembrete cadastrado no sistema.")

@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pytz # Importa a biblioteca para fusos horários
 from dotenv import load_dotenv # Importa para carregar .env localmente
+import subprocess # NOVO: Importa a biblioteca para executar comandos de sistema
 
 # --- Configurações Iniciais ---
 # Carrega variáveis do .env (necessário para execução local e debug)
@@ -66,13 +67,57 @@ def carregar_lembretes():
         print(f"Erro inesperado ao carregar '{LEMBRETES_FILE}': {e}. Retornando lista vazia.")
         return []
 
-def salvar_lembretes(lembretes):
+# NOVA FUNÇÃO: Salva lembretes e faz commit/push
+def salvar_lembretes_e_commitar(lembretes_data, mensagem_commit):
+    """Salva os dados de lembretes no lembretes.json e faz commit/push para o GitHub."""
     try:
+        # Salva o arquivo localmente
         with open(LEMBRETES_FILE, 'w', encoding='utf-8') as f:
-            json.dump(lembretes, f, indent=4, ensure_ascii=False)
-        print(f"Status de lembretes salvo em '{LEMBRETES_FILE}'.")
+            json.dump(lembretes_data, f, indent=4, ensure_ascii=False)
+        print(f"DEBUG: Arquivo {LEMBRETES_FILE} salvo localmente no Actions.")
+
+        # Configura as credenciais do Git
+        github_token = os.getenv("GITHUB_TOKEN")
+        if not github_token:
+            print("ERRO: GITHUB_TOKEN não configurado para o scheduler. Não é possível fazer o commit.")
+            return
+
+        subprocess.run(["git", "config", "user.name", "GitHub Actions Bot"], check=True)
+        subprocess.run(["git", "config", "user.email", "actions@github.com"], check=True)
+
+        # Adiciona o arquivo modificado
+        subprocess.run(["git", "add", LEMBRETES_FILE], check=True)
+        print(f"DEBUG: {LEMBRETES_FILE} adicionado ao staging do Git no Actions.")
+        
+        # Verifica se há algo para commitar antes de tentar commitar
+        # git diff-index --quiet HEAD -- retorna 0 se não há mudanças, 1 se há
+        try:
+            subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], check=True)
+            print("DEBUG: Nenhuma alteração real para commitar. Ignorando commit e push no Actions.")
+            return # Não há alterações, então não precisa commitar nem fazer push
+        except subprocess.CalledProcessError:
+            # Há alterações, continue para commit
+            pass
+
+        # Faz o commit
+        subprocess.run(["git", "commit", "-m", mensagem_commit], check=True)
+        print(f"DEBUG: Commit realizado no Actions com a mensagem: '{mensagem_commit}'.")
+
+        # Faz o push para o repositório remoto usando o token para autenticação
+        repo_owner_repo = os.getenv("GITHUB_REPOSITORY") # Formato: "usuario/repositorio"
+        if not repo_owner_repo:
+            print("ERRO: Variável de ambiente GITHUB_REPOSITORY não encontrada. Não é possível fazer o push.")
+            return
+
+        push_url = f"https://oauth2:{github_token}@github.com/{repo_owner_repo}.git"
+        subprocess.run(["git", "push", push_url], check=True)
+        print(f"DEBUG: Alterações de {LEMBRETES_FILE} empurradas para o GitHub pelo Actions.")
+
+    except subprocess.CalledProcessError as e:
+        error_output = e.stderr.strip() if e.stderr else e.output.strip()
+        print(f"ERRO: Git falhou no Actions ao salvar {LEMBRETES_FILE}: {error_output}. Verifique as permissões do GITHUB_TOKEN no workflow.")
     except Exception as e:
-        print(f"ERRO: Não foi possível salvar '{LEMBRETES_FILE}': {e}")
+        print(f"ERRO: Erro inesperado ao salvar {LEMBRETES_FILE} no Actions: {e}")
 
 
 def carregar_configuracoes():
@@ -129,7 +174,7 @@ def enviar_email(destinatario, assunto, corpo):
 def main():
     print(f"[{datetime.now(FUSO_HORARIO_BRASIL).strftime('%Y-%m-%d %H:%M:%S')}] Iniciando verificação de lembretes...")
     
-    lembretes = carregar_lembretes()
+    lembretes_atuais = carregar_lembretes() # Renomeado para evitar conflito
     config = carregar_configuracoes()
     email_destino_lembretes = config.get("email_destino", EMAIL_ADMIN_FALLBACK)
     
@@ -145,7 +190,7 @@ def main():
     agora = datetime.now(FUSO_HORARIO_BRASIL)
     lembretes_enviados_nesta_execucao = 0
 
-    for lembrete in lembretes:
+    for lembrete in lembretes_atuais:
         try:
             # Pega a data e hora do lembrete, garantindo que são strings
             lembrete_data_str = str(lembrete.get('data', ''))
@@ -188,7 +233,7 @@ def main():
             
     # Salva o arquivo de lembretes APENAS se houver alteração (ou seja, se algum e-mail foi enviado)
     if lembretes_enviados_nesta_execucao > 0:
-        salvar_lembretes(lembretes)
+        salvar_lembretes_e_commitar(lembretes_atuais, f"Scheduler: Lembretes enviados ({lembretes_enviados_nesta_execucao}) atualizados.")
     else:
         print("Nenhum lembrete novo para enviar ou alterar status.")
         

@@ -188,8 +188,15 @@ def deletar_usuario(user_id):
     usuarios_restantes = [u for u in usuarios if u['id'] != user_id]
     if len(usuarios_restantes) < len(usuarios):
         salvar_usuarios(usuarios_restantes, f"Usuário com ID {user_id} deletado.")
-        return True, "Usuário deletado com sucesso."
+
+        # NOVO: Remover também os lembretes do usuário
+        lembretes = carregar_lembretes()
+        lembretes_restantes = [l for l in lembretes if l.get('user_id') != user_id]
+        salvar_lembretes(lembretes_restantes, f"Lembretes do usuário {user_id} removidos após exclusão.")
+
+        return True, "Usuário e seus lembretes deletados com sucesso."
     return False, "Usuário não encontrado."
+
 
 def enviar_email(destino, assunto, corpo, usuario_id=None):
     if not EMAIL_REMETENTE_USER or not EMAIL_REMETENTE_PASS:

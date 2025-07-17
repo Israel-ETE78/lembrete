@@ -8,6 +8,8 @@ on:
 jobs:
   enviar-lembretes:
     runs-on: ubuntu-latest
+    permissions: 
+      contents: write 
 
     steps:
       - name: Checkout do Código
@@ -26,4 +28,6 @@ jobs:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           EMAIL_ADMIN: ${{ secrets.EMAIL_ADMIN }}
+          # O GITHUB_TOKEN é automaticamente fornecido pelo GitHub Actions
+          # e agora terá permissões de escrita devido ao bloco 'permissions' acima.
         run: python scheduler_email_sender.py

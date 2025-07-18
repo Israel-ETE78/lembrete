@@ -24,6 +24,6 @@
         "descricao": "carne",
         "data": "2025-07-18",
         "hora": "16:51",
-        "enviado": false
+        "enviado": true
     }
 ]

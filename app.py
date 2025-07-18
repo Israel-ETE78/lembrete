@@ -288,8 +288,8 @@ if st.session_state.senha_inicial_pendente:
 
 # Lógica de Login (SEGUNDO na ordem)
 elif not st.session_state.logged_in:
-    st.markdown("<h2 style='text-align: center;'>Bem-vindo ao Sistema de Lembretes</h2>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>Faça Login para Continuar</h3>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>🧠 Jarvis | Sistema de Lembretes</h2>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align: center;'>🔐 Faça Login para Continuar</h3>", unsafe_allow_html=True)
 
     login_col_spacer_left, login_col_form, login_col_spacer_right = st.columns([1,2,1])
 

@@ -85,12 +85,22 @@ def salvar_lembretes_e_commitar(lembretes_data, mensagem_commit):
         subprocess.run(["git", "config", "user.name", "GitHub Actions Bot"], check=True)
         subprocess.run(["git", "config", "user.email", "actions@github.com"], check=True)
 
+        # NOVO: Antes de adicionar e commitar, PULL para integrar quaisquer mudanças remotas
+        try:
+            # Assumindo que a branch principal é 'main'. Se for 'master', mude aqui.
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
+            print(f"DEBUG: Git pull bem-sucedido para {LEMBRETES_FILE}.")
+        except subprocess.CalledProcessError as e:
+            # Captura a saída de erro de forma segura
+            error_pull_output = e.stderr.decode('utf-8').strip() if e.stderr else (e.output.decode('utf-8').strip() if e.output else "Nenhuma saída de erro do git pull.")
+            print(f"DEBUG: Erro ao fazer git pull: {error_pull_output}. Pode haver conflitos ou o remoto tem novas alterações. Tentando prosseguir com o push.")
+            # Note: Depending on the severity of the conflict/error, you might want to exit here instead of proceeding.
+
         # Adiciona o arquivo modificado
         subprocess.run(["git", "add", LEMBRETES_FILE], check=True)
         print(f"DEBUG: {LEMBRETES_FILE} adicionado ao staging do Git no Actions.")
         
         # Verifica se há algo para commitar antes de tentar commitar
-        # git diff-index --quiet HEAD -- retorna 0 se não há mudanças, 1 se há
         try:
             subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], check=True)
             print("DEBUG: Nenhuma alteração real para commitar. Ignorando commit e push no Actions.")
@@ -114,10 +124,14 @@ def salvar_lembretes_e_commitar(lembretes_data, mensagem_commit):
         print(f"DEBUG: Alterações de {LEMBRETES_FILE} empurradas para o GitHub pelo Actions.")
 
     except subprocess.CalledProcessError as e:
-        error_output = e.stderr.strip() if e.stderr else e.output.strip()
-        print(f"ERRO: Git falhou no Actions ao salvar {LEMBRETES_FILE}: {error_output}. Verifique as permissões do GITHUB_TOKEN no workflow.")
+        # Captura a saída de erro de forma segura para o erro de push
+        error_output = e.stderr.decode('utf-8').strip() if e.stderr else (e.output.decode('utf-8').strip() if e.output else "Nenhuma saída de erro do Git.")
+        print(f"ERRO: Git falhou no Actions ao salvar {LEMBRETES_FILE}: {error_output}. Verifique as permissões do GITHUB_TOKEN no workflow e conflitos remotos.")
+        # O `raise` aqui é importante para que o GitHub Actions marque a execução como falha.
+        raise # Re-lança a exceção para que o script falhe
     except Exception as e:
         print(f"ERRO: Erro inesperado ao salvar {LEMBRETES_FILE} no Actions: {e}")
+        raise # Re-lança a exceção para que o script falhe
 
 
 def carregar_configuracoes():

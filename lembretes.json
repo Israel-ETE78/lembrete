@@ -24,7 +24,7 @@
         "descricao": "hora de trabalhar",
         "data": "2025-07-18",
         "hora": "12:48",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "0f244adb-5867-4735-a871-9d556ea97e17",
@@ -33,7 +33,7 @@
         "descricao": "aaaa",
         "data": "2025-07-18",
         "hora": "12:57",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "7b0ca1a2-2198-401b-a090-b8ba2f595ee6",
@@ -42,7 +42,7 @@
         "descricao": "bbbb",
         "data": "2025-07-18",
         "hora": "13:18",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "e973c9fc-7179-4620-a6b7-d8b9050d6c9c",
@@ -51,7 +51,7 @@
         "descricao": "ghghghg",
         "data": "2025-07-18",
         "hora": "13:20",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "ef113c97-00fd-4cf9-ad99-098e76010d98",
@@ -60,6 +60,6 @@
         "descricao": "rrrrr",
         "data": "2025-07-18",
         "hora": "13:27",
-        "enviado": false
+        "enviado": true
     }
 ]

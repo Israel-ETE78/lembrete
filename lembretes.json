@@ -24,7 +24,7 @@
         "descricao": "hora de trabalhar",
         "data": "2025-07-18",
         "hora": "12:48",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "0f244adb-5867-4735-a871-9d556ea97e17",
@@ -33,6 +33,6 @@
         "descricao": "aaaa",
         "data": "2025-07-18",
         "hora": "12:57",
-        "enviado": false
+        "enviado": true
     }
 ]

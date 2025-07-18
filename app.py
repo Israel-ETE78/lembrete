@@ -41,36 +41,28 @@ if 'logged_in' not in st.session_state:
 def salvar_com_commit_json(arquivo, dados, mensagem_commit):
     """Salva dados em um arquivo JSON e faz um commit e push para o GitHub."""
     try:
-        # 1. Salva o arquivo localmente no container do Streamlit Cloud
+        # 1. Salva o arquivo localmente
         with open(arquivo, 'w', encoding='utf-8') as f:
             json.dump(dados, f, ensure_ascii=False, indent=4)
         print(f"DEBUG: Arquivo {arquivo} salvo localmente. Mensagem: {mensagem_commit}")
 
         # 2. Configura as credenciais do Git usando o token do ambiente
         github_token = os.getenv("GITHUB_TOKEN")
+        print(f"DEBUG: GITHUB_TOKEN obtido (não imprime o valor real, apenas se existe): {bool(github_token)}")
+
         if not github_token:
-            st.error("Erro: GITHUB_TOKEN não configurado como secret no Streamlit Cloud. Não foi possível fazer o commit para o GitHub.")
+            st.error("Erro: GITHUB_TOKEN não configurado. Não foi possível fazer o commit para o GitHub.")
             print("DEBUG: GITHUB_TOKEN não encontrado nas variáveis de ambiente.")
             return
 
-        # Configura o git com um usuário genérico para o bot do Streamlit
+        # Configura o git com um usuário genérico para o bot
         subprocess.run(["git", "config", "user.name", "Streamlit Cloud Bot"], check=True)
         subprocess.run(["git", "config", "user.email", "streamlit-bot@example.com"], check=True)
 
-        # NOVO: Antes de adicionar e commitar, PULL para integrar quaisquer mudanças remotas
-        try:
-            # Assumindo que a branch principal é 'main'. Se for 'master', mude aqui.
-            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
-            print(f"DEBUG: Git pull bem-sucedido para {arquivo}.")
-        except subprocess.CalledProcessError as e:
-            error_pull_output = e.stderr.decode('utf-8').strip() if e.stderr else (e.output.decode('utf-8').strip() if e.output else "Nenhuma saída de erro do git pull.")
-            print(f"DEBUG: Erro ao fazer git pull: {error_pull_output}. Pode haver conflitos ou o remoto tem novas alterações. Tentando prosseguir com o push.")
-            # Note: Dependendo da severidade do conflito/erro, você pode querer sair aqui em vez de prosseguir.
-
         # 3. Adiciona o arquivo às mudanças do Git
-        subprocess.run(["git", "add", arquivo], check=True) # Mudei para check=True, pois queremos que ele falhe se o arquivo não puder ser adicionado
+        subprocess.run(["git", "add", arquivo], check=True)
         print(f"DEBUG: {arquivo} adicionado ao staging do Git.")
-        
+
         # 4. Verifica se há algo para commitar antes de tentar commitar
         try:
             subprocess.run(["git", "diff-index", "--quiet", "HEAD", "--"], check=True)
@@ -80,37 +72,66 @@ def salvar_com_commit_json(arquivo, dados, mensagem_commit):
             # Há alterações, continue para commit
             pass
 
-        # 5. Faz o commit
+        # 5. Faz o commit LOCAL primeiramente
         subprocess.run(["git", "commit", "-m", mensagem_commit], check=True)
         print(f"DEBUG: Commit realizado com a mensagem: '{mensagem_commit}'.")
+        # --- NOVO DEBUG: VERIFICAR STATUS DO GIT ANTES DO PULL ---
+        try:
+            git_status_output = subprocess.run(
+                ["git", "status", "--porcelain"], # --porcelain para saída limpa
+                capture_output=True,
+                text=True,
+                check=False # Não queremos que ele levante erro se houver mudanças
+            ).stdout.strip()
+            if git_status_output:
+                print("DEBUG: Git status antes do pull (Há mudanças não commitadas/trackeadas):")
+                print(git_status_output)
+            else:
+                print("DEBUG: Git status antes do pull: Diretório de trabalho limpo (nenhum unstaged change detectado por --porcelain).")
+        except Exception as e:
+            print(f"DEBUG: Erro ao obter git status: {e}")
+        # NOVO: Agora que as mudanças locais estão commitadas, faça o PULL para integrar quaisquer mudanças remotas
+        try:
+            # Assumindo que a branch principal é 'main'. Se for 'master', mude aqui.
+            subprocess.run(["git", "pull", "--rebase", "origin", "main"], check=True)
+            print(f"DEBUG: Git pull --rebase bem-sucedido para {arquivo}.")
+        except subprocess.CalledProcessError as e:
+            error_pull_output = e.stderr.decode('utf-8').strip() if e.stderr else (e.output.decode('utf-8').strip() if e.output else "Nenhuma saída de erro do git pull.")
+            st.warning(f"Aviso no Git pull: {error_pull_output}. Pode haver conflitos ou o remoto tem novas alterações. O push pode falhar se os conflitos não forem resolvidos automaticamente.")
+            print(f"DEBUG: Erro/Aviso ao fazer git pull: {error_pull_output}.")
+            # Importante: se o rebase falhar (ex: devido a conflitos que exigem intervenção manual), o push abaixo ainda falhará.
+            # Para um sistema automatizado, o ideal é que o pull seja sempre limpo.
+            # Se for um ambiente Streamlit Cloud, o "clean working directory" já é esperado na inicialização.
 
         # 6. Faz o push para o repositório remoto
         current_repo_url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True, check=True).stdout.strip()
-        
+
         if current_repo_url.startswith("git@"):
             repo_path = current_repo_url.split("git@github.com:")[1]
             push_url = f"https://oauth2:{github_token}@github.com/{repo_path}"
         elif current_repo_url.startswith("https://"):
             parts = current_repo_url.split("//")
-            host_and_path = parts[1].split("@")[-1] 
+            host_and_path = parts[1].split("@")[-1]
             push_url = f"{parts[0]}//oauth2:{github_token}@{host_and_path}"
         else:
             st.error(f"Erro: Formato de URL de repositório desconhecido: {current_repo_url}. Não é possível fazer o push com o token.")
             print(f"DEBUG: Formato de URL de repositório desconhecido: {current_repo_url}")
             return
-            
+
+        print(f"DEBUG: push_url final sendo usada (ATENÇÃO: pode expor o token, remova após o debug): {push_url}")
+
         subprocess.run(["git", "push", push_url], check=True)
         print(f"DEBUG: Alterações de {arquivo} empurradas para o GitHub.")
 
     except subprocess.CalledProcessError as e:
         error_output = e.stderr.decode('utf-8').strip() if e.stderr else (e.output.decode('utf-8').strip() if e.output else "Nenhuma saída de erro do Git.")
-        st.error(f"Erro no Git ao salvar {arquivo}: {error_output}. Verifique as permissões do seu GITHUB_TOKEN.")
+        st.error(f"Erro no Git ao salvar {arquivo}: {error_output}. Verifique as permissões do seu GITHUB_TOKEN ou se há conflitos remotos.")
         print(f"DEBUG: Erro do subprocesso Git: {error_output}")
-        raise # Re-lança a exceção para que o Streamlit Cloud marque a execução como falha.
+        # Removido o raise, pois st.error já mostra a mensagem e o Streamlit lida melhor sem o re-lançamento aqui.
     except Exception as e:
         st.error(f"Erro inesperado ao salvar {arquivo}: {e}")
         print(f"DEBUG: Erro inesperado ao salvar arquivo: {e}")
-        raise # Re-lança a exceção para que o Streamlit Cloud marque a execução como falha.
+        # Removido o raise
 
 def carregar_lembretes():
     try:

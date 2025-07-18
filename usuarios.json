@@ -12,5 +12,12 @@
         "password_hash": "$2b$12$xAFtktzBUmpcIK8F435JUeqP0yLrD82Z6OCckU.nQ1P2ZwGiyBrNW",
         "role": "normal",
         "senha_inicial_definida": true
+    },
+    {
+        "id": "1a9946be-55a1-4c51-8667-1bb9ae5d0751",
+        "username": "teste",
+        "password_hash": "$2b$12$Dsv4Wwe.6YhTpeKyzunATu20leE86RbGiNPv0gPOFq4tbDmI.3Mci",
+        "role": "normal",
+        "senha_inicial_definida": false
     }
 ]

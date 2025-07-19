@@ -6,7 +6,7 @@
         "descricao": "zzzzzzz",
         "data": "2025-07-18",
         "hora": "22:00",
-        "enviado": false
+        "enviado": true
     },
     {
         "id": "32ce8847-5eca-4313-852d-844ea9f38fad",
@@ -15,6 +15,6 @@
         "descricao": "hora de dormi meu querido!!! Deu tudo certo!!!!",
         "data": "2025-07-18",
         "hora": "22:00",
-        "enviado": false
+        "enviado": true
     }
 ]

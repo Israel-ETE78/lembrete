@@ -15,12 +15,13 @@ import bcrypt
 import hashlib
 import subprocess
 
-# Página de "ping" para manter o app acordado
-params = st.experimental_get_query_params()
+# ✅ Nova forma correta de ler query params
+params = st.query_params
 
 if "ping" in params:
     st.write("✅ Jarvis Lembrete está online!")
-    st.stop()  # Para a execução aqui
+    st.stop()
+
 
 # Carrega variáveis do .env
 load_dotenv()

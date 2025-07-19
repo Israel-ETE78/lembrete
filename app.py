@@ -15,6 +15,13 @@ import bcrypt
 import hashlib
 import subprocess
 
+# Página de "ping" para manter o app acordado
+params = st.experimental_get_query_params()
+
+if "ping" in params:
+    st.write("✅ Jarvis Lembrete está online!")
+    st.stop()  # Para a execução aqui
+
 # Carrega variáveis do .env
 load_dotenv()
 
@@ -351,13 +358,25 @@ elif st.session_state.logged_in:
     selected_tab = st.sidebar.radio("Navegação", tabs)
 
 
+    # Trecho do código que será alterado
+
     if selected_tab == "Meus Lembretes":
+        # --- INÍCIO DA CORREÇÃO ---
+        # ADICIONADO: Gerencia o estado da hora padrão para evitar que seja resetada em cada interação.
+        # Isso define a hora padrão apenas uma vez quando o formulário é preparado.
+        if 'default_form_time' not in st.session_state:
+            st.session_state.default_form_time = datetime.now(FUSO_HORARIO_BRASIL).time()
+        # --- FIM DA CORREÇÃO ---
+
         st.subheader("Adicionar Novo Lembrete")
         with st.form("novo_lembrete_form", clear_on_submit=True):
             titulo = st.text_input("Título do Lembrete")
             descricao = st.text_area("Descrição")
             data = st.date_input("Data", min_value=datetime.now(FUSO_HORARIO_BRASIL).date())
-            hora = st.time_input("Hora", value=datetime.now(FUSO_HORARIO_BRASIL).time())
+            # --- INÍCIO DA CORREÇÃO ---
+            # ALTERADO: Usa a hora do session_state como padrão, que não muda durante as interações.
+            hora = st.time_input("Hora", value=st.session_state.default_form_time)
+            # --- FIM DA CORREÇÃO ---
             submit_button = st.form_submit_button("Salvar Lembrete")
 
             if submit_button:
@@ -375,6 +394,13 @@ elif st.session_state.logged_in:
                     lembretes.append(novo_lembrete)
                     salvar_lembretes(lembretes, f"Novo lembrete '{titulo}' adicionado por {st.session_state.username}.")
                     st.success("Lembrete salvo com sucesso!")
+                    
+                    # --- INÍCIO DA CORREÇÃO ---
+                    # ADICIONADO: Limpa o estado da hora padrão após o envio bem-sucedido,
+                    # preparando o formulário para a próxima adição.
+                    del st.session_state.default_form_time
+                    # --- FIM DA CORREÇÃO ---
+                    
                     st.rerun()
 
         st.subheader("Meus Lembretes Pendentes")

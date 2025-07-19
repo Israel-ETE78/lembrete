@@ -61,5 +61,12 @@
         "password_hash": "$2b$12$49OUPtuNH8Bi6Uo/415kC.BjZegHYB0kVSNubS45.e/18VYIlZAWq",
         "role": "normal",
         "senha_inicial_definida": false
+    },
+    {
+        "id": "4e3ea2b5-b3d8-4130-8ed5-f98e75587d98",
+        "username": "jarvis07",
+        "password_hash": "$2b$12$Ao0DLZ2TwlTWkWE15l.0GeIl8s0rgC2nAojgiSE2eUMl5020sfaH2",
+        "role": "normal",
+        "senha_inicial_definida": false
     }
 ]

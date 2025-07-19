@@ -399,51 +399,79 @@ elif st.session_state.logged_in:
 
             if not df_pendentes.empty:
                 st.write("Lembretes agendados e pendentes de envio:")
-                df_pendentes["Data e Hora"] = df_pendentes["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+                df_pendentes_display = df_pendentes.copy()
+                df_pendentes_display["Data e Hora"] = df_pendentes_display["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
 
                 st.dataframe(
-                    df_pendentes[['titulo', 'descricao', 'Data e Hora']],
+                    df_pendentes_display[['titulo', 'descricao', 'Data e Hora']],
                     hide_index=True,
                     use_container_width=True
                 )
 
-                st.subheader("Deletar Lembretes")
-                lembretes_para_deletar = st.multiselect(
-                    "Selecione o(s) lembrete(s) para deletar:",
-                    options=df_pendentes['titulo'].tolist()
+                st.markdown("---")
+                st.write("##### Deletar Lembretes Pendentes")
+                # Usar o ID para deletar para evitar problemas com títulos duplicados
+                opcoes_pendentes = {f"{row['titulo']} ({row['Data e Hora']})": row['id'] for index, row in df_pendentes_display.iterrows()}
+                
+                lembretes_pendentes_para_deletar_label = st.multiselect(
+                    "Selecione o(s) lembrete(s) pendente(s) para deletar:",
+                    options=list(opcoes_pendentes.keys())
                 )
-                if st.button("Confirmar Deleção"):
-                    if lembretes_para_deletar:
+                if st.button("Confirmar Deleção de Pendentes"):
+                    if lembretes_pendentes_para_deletar_label:
+                        ids_para_deletar = [opcoes_pendentes[label] for label in lembretes_pendentes_para_deletar_label]
                         lembretes_atuais = carregar_lembretes()
-                        lembretes_restantes = [
-                            l for l in lembretes_atuais
-                            if not (l.get('user_id') == st.session_state.user_id and l['titulo'] in lembretes_para_deletar)
-                        ]
+                        lembretes_restantes = [l for l in lembretes_atuais if l['id'] not in ids_para_deletar]
+                        
                         if len(lembretes_restantes) < len(lembretes_atuais):
-                            salvar_lembretes(lembretes_restantes, f"Lembretes deletados por {st.session_state.username}.")
-                            st.success("Lembrete(s) deletado(s) com sucesso!")
+                            salvar_lembretes(lembretes_restantes, f"Lembretes pendentes deletados por {st.session_state.username}.")
+                            st.success("Lembrete(s) pendente(s) deletado(s) com sucesso!")
                             st.rerun()
-                        else:
-                            st.warning("Nenhum lembrete selecionado para deletar foi encontrado.")
                     else:
-                        st.info("Nenhum lembrete selecionado para deletar.")
+                        st.info("Nenhum lembrete pendente selecionado para deletar.")
             else:
                 st.info("Nenhum lembrete futuro e pendente de envio encontrado.")
 
-            st.subheader("Lembretes Já Enviados ou Passados")
+            st.subheader("Histórico (Lembretes Já Enviados ou Passados)")
             df_passados_ou_enviados = df[
                 (df["Data e Hora"] <= agora) |
                 (df["enviado"] == True)
             ].sort_values("Data e Hora", ascending=False)
 
             if not df_passados_ou_enviados.empty:
-                df_passados_ou_enviados["Data e Hora"] = df_passados_ou_enviados["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
-                df_passados_ou_enviados["Enviado"] = df_passados_ou_enviados["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+                df_passados_display = df_passados_ou_enviados.copy()
+                df_passados_display["Data e Hora"] = df_passados_display["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+                df_passados_display["Enviado"] = df_passados_display["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
                 st.dataframe(
-                    df_passados_ou_enviados[['titulo', 'descricao', 'Data e Hora', 'Enviado']],
+                    df_passados_display[['titulo', 'descricao', 'Data e Hora', 'Enviado']],
                     hide_index=True,
                     use_container_width=True
                 )
+                
+                # --- INÍCIO DA NOVA FUNCIONALIDADE DE EXCLUSÃO PARA HISTÓRICO ---
+                st.markdown("---")
+                st.write("##### Deletar Lembretes do Histórico")
+                # Usar o ID para deletar
+                opcoes_historico = {f"{row['titulo']} ({row['Data e Hora']})": row['id'] for index, row in df_passados_display.iterrows()}
+
+                lembretes_historico_para_deletar_label = st.multiselect(
+                    "Selecione o(s) lembrete(s) do histórico para deletar:",
+                    options=list(opcoes_historico.keys()),
+                    key="delete_historico_multiselect"
+                )
+                if st.button("Confirmar Deleção do Histórico"):
+                    if lembretes_historico_para_deletar_label:
+                        ids_para_deletar = [opcoes_historico[label] for label in lembretes_historico_para_deletar_label]
+                        lembretes_atuais = carregar_lembretes()
+                        lembretes_restantes = [l for l in lembretes_atuais if l['id'] not in ids_para_deletar]
+
+                        if len(lembretes_restantes) < len(lembretes_atuais):
+                            salvar_lembretes(lembretes_restantes, f"Lembretes do histórico deletados por {st.session_state.username}.")
+                            st.success("Lembrete(s) do histórico deletado(s) com sucesso!")
+                            st.rerun()
+                    else:
+                        st.info("Nenhum lembrete do histórico selecionado para deletar.")
+                # --- FIM DA NOVA FUNCIONALIDADE ---
             else:
                 st.info("Nenhum lembrete enviado ou passado encontrado.")
         else:
@@ -561,29 +589,62 @@ elif st.session_state.logged_in:
 
         with admin_tab2:
             st.subheader("Todos os Lembretes do Sistema")
-            try:
-                with open(LEMBRETES_FILE, 'r', encoding='utf-8') as f:
-                    all_lembretes = json.load(f)
-            except (json.JSONDecodeError, FileNotFoundError):
-                all_lembretes = []
-
+            all_lembretes = carregar_lembretes()
+            
             for lembrete in all_lembretes:
-                lembrete.setdefault('user_id', None)
+                lembrete.setdefault('user_id', 'Desconhecido')
+                lembrete.setdefault('enviado', False) # Garante compatibilidade
 
             if all_lembretes:
                 df_all = pd.DataFrame(all_lembretes)
                 df_all["Data e Hora"] = pd.to_datetime(df_all["data"] + " " + df_all["hora"], errors='coerce')
                 df_all = df_all.dropna(subset=["Data e Hora"]).sort_values("Data e Hora")
-                df_all["Enviado"] = df_all["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
-                df_all["Data e Hora"] = df_all["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
-
+                
                 all_users = carregar_usuarios()
                 user_map = {u['id']: u['username'] for u in all_users}
                 df_all['Usuário'] = df_all['user_id'].map(user_map).fillna('Desconhecido')
+
+                df_display_all = df_all.copy()
+                df_display_all["Enviado"] = df_display_all["enviado"].apply(lambda x: "✅ Sim" if x else "❌ Não")
+                df_display_all["Data e Hora"] = df_display_all["Data e Hora"].dt.strftime('%d/%m/%Y %H:%M')
+
                 st.dataframe(
-                    df_all[['Usuário', 'titulo', 'descricao', 'Data e Hora', 'Enviado']],
+                    df_display_all[['Usuário', 'titulo', 'descricao', 'Data e Hora', 'Enviado']],
                     hide_index=True,
                     use_container_width=True
                 )
+
+                # --- INÍCIO DA FUNCIONALIDADE DE EXCLUSÃO PARA ADMIN ---
+                st.markdown("---")
+                st.write("### Deletar Lembretes do Sistema")
+                
+                # Criar uma representação única para cada lembrete no multiselect
+                opcoes_all_lembretes = {
+                    f"({row['Usuário']}) {row['titulo']} - {row['Data e Hora']}": row['id'] 
+                    for index, row in df_display_all.iterrows()
+                }
+
+                lembretes_para_deletar_admin_label = st.multiselect(
+                    "Selecione um ou mais lembretes para deletar do sistema:",
+                    options=list(opcoes_all_lembretes.keys()),
+                    key="admin_delete_multiselect"
+                )
+
+                if st.button("Confirmar Deleção (Admin)"):
+                    if lembretes_para_deletar_admin_label:
+                        ids_para_deletar = [opcoes_all_lembretes[label] for label in lembretes_para_deletar_admin_label]
+                        
+                        lembretes_atuais = carregar_lembretes()
+                        lembretes_restantes = [l for l in lembretes_atuais if l.get('id') not in ids_para_deletar]
+
+                        if len(lembretes_restantes) < len(lembretes_atuais):
+                            salvar_lembretes(lembretes_restantes, f"Lembretes deletados pelo admin {st.session_state.username}.")
+                            st.success(f"{len(ids_para_deletar)} lembrete(s) deletado(s) com sucesso!")
+                            st.rerun()
+                        else:
+                            st.warning("Os lembretes selecionados não foram encontrados.")
+                    else:
+                        st.info("Nenhum lembrete selecionado para deletar.")
+                # --- FIM DA FUNCIONALIDADE DE EXCLUSÃO PARA ADMIN ---
             else:
                 st.info("Nenhum lembrete cadastrado no sistema.")

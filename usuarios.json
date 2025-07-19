@@ -33,5 +33,12 @@
         "password_hash": "$2b$12$.T9sQtAJ01snTIriNb.rkeVaFTV087pNk2cdcJHnelaVutY2Y1Uam",
         "role": "normal",
         "senha_inicial_definida": false
+    },
+    {
+        "id": "c2a2a846-c4ff-455b-abf2-9099f07f387b",
+        "username": "jarvis03",
+        "password_hash": "$2b$12$uj2VdRxhrQtBsMvG49AbP.ykj/6AkEJ.Aru6JhjllCECY2c1MSo2C",
+        "role": "normal",
+        "senha_inicial_definida": false
     }
 ]

@@ -82,5 +82,12 @@
         "password_hash": "$2b$12$ajM.YdrgfaNHw8HjOqiS6e1CLY893bUoIblVXW4CSjJMFNfj5wsqK",
         "role": "normal",
         "senha_inicial_definida": false
+    },
+    {
+        "id": "c6f21d1c-6cf2-4580-b75a-eb56afebbb5f",
+        "username": "ingrid",
+        "password_hash": "$2b$12$vNEc2N1TNFzHKvN3BEeUw.JeOX6HzuNP4uKwZXsNwhKQReXX11096",
+        "role": "normal",
+        "senha_inicial_definida": false
     }
 ]

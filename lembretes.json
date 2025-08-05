@@ -6,6 +6,6 @@
         "descricao": "Olá, hora de ir para escola. Saia de casa as 19:00 h",
         "data": "2025-08-05",
         "hora": "18:00",
-        "enviado": false
+        "enviado": true
     }
 ]

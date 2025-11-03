@@ -16,5 +16,14 @@
         "data": "2025-11-06",
         "hora": "10:00",
         "enviado": false
+    },
+    {
+        "id": "03cdba3f-6989-4a2a-87bf-fae10ff8a729",
+        "user_id": "f348d38c-d527-4a84-ad64-c1b820c0ac8c",
+        "titulo": "Assinatura do ChaGpt",
+        "descricao": "Lembre de cancelar Assinatura do ChatGpt dia 18/11/2025",
+        "data": "2025-11-18",
+        "hora": "10:00",
+        "enviado": false
     }
 ]
